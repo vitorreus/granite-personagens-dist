@@ -446,6 +446,10 @@
 .pg-root .pg-picker-item:hover {
   background: var(--app-hover);
 }
+.pg-root .pg-picker-item.is-best {
+  background: var(--app-hover);
+  box-shadow: inset 2px 0 0 var(--app-accent);
+}
 .pg-picker-thumb {
   flex: none;
   width: 36px;
@@ -470,4 +474,44 @@
 .pg-picker-actions {
   display: flex;
   justify-content: flex-end;
+}
+
+/* relations: "Citado por" and the reciprocal relation */
+.pg-subtitle {
+  margin: 8px 0 2px;
+  font-weight: 500;
+}
+.pg-cited-type {
+  flex: 1;
+  min-width: 0;
+  color: var(--app-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pg-root .pg-cited-back {
+  align-self: center;
+  flex: none;
+  padding: 2px 8px;
+  font-size: 12px;
+}
+.pg-dialog {
+  width: min(420px, 100%);
+}
+.pg-dialog .pg-picker-actions {
+  gap: 8px;
+}
+.pg-dialog .pg-recip-type {
+  border-color: var(--app-border-strong);
+  background: var(--app-input-bg);
+}
+.pg-root .pg-btn-primary {
+  border-color: var(--app-accent);
+  background: var(--app-accent);
+  color: var(--app-accent-fg, #fff);
+}
+.pg-root .pg-btn-primary:hover {
+  background: var(--app-accent);
+  color: var(--app-accent-fg, #fff);
+  filter: brightness(1.08);
 }

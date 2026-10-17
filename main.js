@@ -349,10 +349,162 @@ async function walkFiles(granite, keep, maxDirs = MAX_DIRS) {
 		partial: queue.length > 0
 	};
 }
-/** Case- and accent-insensitive substring match. */
-function matches(path, query) {
-	const fold = (s) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
-	return fold(path).includes(fold(query.trim()));
+/** Files read at the same time. */
+var PARALLEL_READS = 8;
+/** What the sheet needs of the character file `path` holding `text`. */
+function characterInfo(path, text) {
+	const r = parse(text);
+	if (!r.ok) return {
+		path,
+		name: "",
+		relations: [],
+		valid: false,
+		relationsEditable: false
+	};
+	return {
+		path,
+		name: r.data.name.trim(),
+		relations: r.data.relations.map((x) => ({
+			character: x.character,
+			type: x.type
+		})),
+		valid: true,
+		relationsEditable: !("relations" in r.data.kept)
+	};
+}
+/**
+* One character. The text of an open tab (with its unsaved edits) wins over
+* the file on disk: on purpose, the index shows what the user sees in the
+* other tabs, even before it is saved (a write there is refused by the kernel
+* meanwhile, so nothing is lost). A file that cannot be read or parsed has no
+* name and no relations.
+*/
+async function readCharacter(granite, path) {
+	try {
+		return characterInfo(path, granite.documents.text(path) ?? await granite.files.readText(path));
+	} catch {
+		return {
+			path,
+			name: "",
+			relations: [],
+			valid: false,
+			relationsEditable: false
+		};
+	}
+}
+/** Every character of the vault with its name and relations (see readCharacter). */
+async function loadCharacters(granite, maxDirs = MAX_DIRS) {
+	const walk = await walkFiles(granite, isCharacter, maxDirs);
+	const characters = new Array(walk.paths.length);
+	const read = (path) => readCharacter(granite, path);
+	for (let i = 0; i < walk.paths.length; i += PARALLEL_READS) {
+		const batch = walk.paths.slice(i, i + PARALLEL_READS);
+		(await Promise.all(batch.map(read))).forEach((c, j) => characters[i + j] = c);
+	}
+	return {
+		characters,
+		partial: walk.partial
+	};
+}
+//#endregion
+//#region src/search.ts
+var EXACT = 6;
+var PREFIX = 5;
+var INITIALS = 4;
+var INSIDE = 3;
+var SUBSEQUENCE = 2;
+var TYPO = 1;
+var PATH = .5;
+/** Bonus when the whole query is one of the names. */
+var WHOLE_NAME = 10;
+/** Words this long (or longer) tolerate one typo. */
+var TYPO_MIN = 4;
+/** Lower case, no accents. */
+var fold = (s) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+var wordsOf = (s) => fold(s).split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+/** `q` appears in order in `s`, starting at its first character. */
+function isSubsequence(q, s) {
+	if (q[0] !== s[0]) return false;
+	let i = 0;
+	for (const ch of s) if (ch === q[i] && ++i === q.length) return true;
+	return false;
+}
+/** Edit distance with transpositions (optimal string alignment), stopping above `max`. */
+function distance(a, b, max) {
+	if (Math.abs(a.length - b.length) > max) return max + 1;
+	let prev2 = [];
+	let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+	for (let i = 1; i <= a.length; i++) {
+		const row = [i];
+		let best = i;
+		for (let j = 1; j <= b.length; j++) {
+			const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+			let d = Math.min(prev[j] + 1, row[j - 1] + 1, prev[j - 1] + cost);
+			if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d = Math.min(d, prev2[j - 2] + 1);
+			row.push(d);
+			best = Math.min(best, d);
+		}
+		if (best > max) return max + 1;
+		prev2 = prev;
+		prev = row;
+	}
+	return prev[b.length];
+}
+/** `q` is one typo away from `w` or from the start of `w` (a word still being typed). */
+function nearly(q, w) {
+	if (q.length < TYPO_MIN) return false;
+	for (let len = q.length - 1; len <= q.length + 1; len++) {
+		if (len > w.length) break;
+		if (distance(q, w.slice(0, len), 1) <= 1) return true;
+	}
+	return distance(q, w, 1) <= 1;
+}
+/** Best score of the query word `q` against one name, already folded (0: no match). */
+function wordScore(q, words, initials) {
+	let best = 0;
+	for (const w of words) {
+		if (w === q) return EXACT;
+		if (w.startsWith(q)) best = Math.max(best, PREFIX);
+	}
+	if (best) return best;
+	if (q.length > 1 && isSubsequence(q, initials)) return INITIALS;
+	for (const w of words) if (w.includes(q)) return INSIDE;
+	for (let k = 0; k < words.length; k++) if (isSubsequence(q, words.slice(k).join(" "))) return SUBSEQUENCE;
+	for (const w of words) if (nearly(q, w)) return TYPO;
+	return 0;
+}
+/** Relevance of `item` for `query`: 0 when it does not match, 1 for an empty query. */
+function score(item, query) {
+	const qs = wordsOf(query);
+	if (qs.length === 0) return 1;
+	const names = item.names.map((n) => {
+		const words = wordsOf(n);
+		return {
+			words,
+			initials: words.map((w) => w[0]).join(""),
+			whole: words.join(" ")
+		};
+	});
+	const path = fold(item.path);
+	let total = 0;
+	for (const q of qs) {
+		let best = 0;
+		for (const n of names) best = Math.max(best, wordScore(q, n.words, n.initials));
+		if (!best && path.includes(q)) best = PATH;
+		if (!best) return 0;
+		total += best;
+	}
+	const whole = qs.join(" ");
+	if (names.some((n) => n.whole === whole)) total += WHOLE_NAME;
+	return total;
+}
+/** The items that match `query`, most relevant first (ties keep their order). */
+function rank(items, query, searchable) {
+	return items.map((item, i) => ({
+		item,
+		i,
+		s: score(searchable(item), query)
+	})).filter((x) => x.s > 0).sort((a, b) => b.s - a.s || a.i - b.i).map((x) => x.item);
 }
 //#endregion
 //#region src/sheet.ts
@@ -381,6 +533,14 @@ var RELATION_SUGGESTIONS = [
 	"inimigo",
 	"pai",
 	"mãe"
+];
+/** Relation types suggested back as themselves for the reciprocal relation. */
+var SYMMETRIC_RELATIONS = [
+	"rival",
+	"amigo",
+	"amiga",
+	"inimigo",
+	"interesse amoroso"
 ];
 var COLOR_SUGGESTIONS = [
 	"cabelo",
@@ -431,6 +591,104 @@ function createSheet(granite, container, doc) {
 	setText(text);
 	const isReadonly = () => readonlyFlag || data === null;
 	const hasDraft = () => [...drafts.values()].some((v) => v.trim() !== "");
+	/** The vault's characters; null until first read. */
+	let index = null;
+	/** The same characters by path. */
+	let byPath = /* @__PURE__ */ new Map();
+	/** What the relations section last showed from the index (see indexView). */
+	let shownView = "";
+	let indexGen = 0;
+	let indexTimer;
+	const subs = [];
+	const infoOf = (path) => byPath.get(path);
+	/** A character's name, else its file name. */
+	const label = (path) => infoOf(path)?.name || baseName(path);
+	/** Characters changed since the index was read, to read again one by one. */
+	const changed = /* @__PURE__ */ new Set();
+	/** A full read is scheduled (it covers `changed`) or running. */
+	let fullScheduled = false;
+	let fullRunning = 0;
+	const setIndex = (r) => {
+		index = r;
+		byPath = new Map(r.characters.map((c) => [c.path, c]));
+		renderRelations();
+	};
+	/** Reads the index again (the newest read wins) and redraws the relations. */
+	const refreshIndex = () => {
+		clearTimeout(indexTimer);
+		indexTimer = void 0;
+		fullScheduled = false;
+		changed.clear();
+		const gen = ++indexGen;
+		fullRunning++;
+		return loadCharacters(granite).then((r) => {
+			if (!destroyed && gen === indexGen) setIndex(r);
+			return r;
+		}).finally(() => {
+			fullRunning--;
+			if (changed.size > 0) arm();
+		});
+	};
+	/** Reads again only the characters in `changed` and updates their entries. */
+	const refreshChanged = async () => {
+		indexTimer = void 0;
+		if (fullRunning > 0 || !index) return;
+		const paths = [...changed];
+		changed.clear();
+		const gen = indexGen;
+		const infos = await Promise.all(paths.map((p) => readCharacter(granite, p)));
+		if (destroyed || gen !== indexGen || !index) return;
+		const next = new Map(byPath);
+		for (const info of infos) next.set(info.path, info);
+		setIndex({
+			characters: [...next.values()].sort((a, b) => a.path.localeCompare(b.path)),
+			partial: index.partial
+		});
+	};
+	const arm = () => {
+		if (destroyed) return;
+		clearTimeout(indexTimer);
+		indexTimer = setTimeout(() => fullScheduled ? void refreshIndex().catch(() => {}) : void refreshChanged().catch(() => {}), 300);
+	};
+	/** The whole vault is read again (a character or folder was created, removed or renamed). */
+	const scheduleIndex = () => {
+		fullScheduled = true;
+		arm();
+	};
+	/** Only `p`, a character whose content changed, is read again. */
+	const scheduleOne = (p) => {
+		changed.add(p);
+		if (!fullScheduled) arm();
+	};
+	/** walkFiles skips hidden paths: their changes never touch the index. */
+	const isHidden = (p) => p.split("/").some((x) => x.startsWith("."));
+	/** Whether the index has characters inside the folder `p`. */
+	const holdsIndexed = (p) => index === null || index.characters.some((c) => c.path.startsWith(`${p}/`));
+	/** Whether `p` is a folder now, by the kind its parent's listing gives it. */
+	const isFolder = async (p) => {
+		const slash = p.lastIndexOf("/");
+		return (await granite.files.list(slash < 0 ? "" : p.slice(0, slash)).catch(() => [])).some((e) => e.path === p && e.kind === "dir");
+	};
+	const fullIf = (cond) => void Promise.resolve(cond).then((yes) => yes && scheduleIndex());
+	subs.push(granite.files.onDidChange((c) => {
+		if (c.path === doc.path && c.type !== "renamed") return;
+		const here = !isHidden(c.path);
+		const from = c.from !== void 0 && !isHidden(c.from) ? c.from : void 0;
+		switch (c.type) {
+			case "changed":
+				if (here && isCharacter(c.path)) scheduleOne(c.path);
+				return;
+			case "deleted": return fullIf(here && (isCharacter(c.path) || holdsIndexed(c.path)));
+			case "renamed":
+				if (here && isCharacter(c.path) || from !== void 0 && (isCharacter(from) || holdsIndexed(from))) return fullIf(true);
+				return fullIf(here && isFolder(c.path));
+			case "created":
+				if (!here) return;
+				return fullIf(isCharacter(c.path) || isFolder(c.path));
+		}
+	}), granite.documents.onDidChange((d) => {
+		if (d.path !== doc.path && isCharacter(d.path) && d.status === "saved") scheduleOne(d.path);
+	}));
 	/**
 	* A user edit: markDirty first (it may reload this view with another
 	* tab's text), then the change is applied to whatever the model is now.
@@ -530,7 +788,9 @@ function createSheet(granite, container, doc) {
 		overlayCleanup = null;
 		cleanup?.();
 		layer.replaceChildren();
-		if (restore instanceof HTMLElement && restore.isConnected) restore.focus();
+		if (!(restore instanceof HTMLElement)) return;
+		const key = restore.dataset.key;
+		(restore.isConnected ? restore : key ? [...page.querySelectorAll("[data-key]")].find((e) => e.dataset.key === key) : void 0)?.focus();
 	};
 	/** Shows `content` in a modal layer (Esc or a click outside closes it); returns its close. */
 	const overlay = (content, label, cls = "", cleanup) => {
@@ -658,12 +918,16 @@ function createSheet(granite, container, doc) {
 			clearTimeout(timer);
 			timer = void 0;
 			const q = search.value;
-			const items = all.filter((p) => matches(p, q));
+			const nameOf = opts.name ?? baseName;
+			const items = rank(all, q, (p) => ({
+				names: [nameOf(p), baseName(p)],
+				path: p
+			}));
 			status.textContent = all.length === 0 ? opts.empty : items.length === 0 ? "Nada encontrado" : "";
 			status.hidden = status.textContent === "";
 			observer?.disconnect();
-			list.replaceChildren(...items.slice(0, PICKER_MAX).map((path) => {
-				const b = button("", "pg-picker-item", () => {
+			list.replaceChildren(...items.slice(0, PICKER_MAX).map((path, i) => {
+				const b = button("", i === 0 && q.trim() ? "pg-picker-item is-best" : "pg-picker-item", () => {
 					o.close();
 					opts.pick(path);
 				});
@@ -680,7 +944,7 @@ function createSheet(granite, container, doc) {
 				}
 				b.append(h("span", {
 					class: "pg-picker-name",
-					text: baseName(path)
+					text: nameOf(path)
 				}), h("span", {
 					class: "pg-picker-path",
 					text: path
@@ -991,10 +1255,95 @@ function createSheet(granite, container, doc) {
 		multiline: true,
 		placeholder: "Adicionar…"
 	})));
+	/** This character's name for the other sheets' messages. */
+	const ownName = () => data?.name.trim() || baseName(doc.path);
+	/** Whether `target` is a known character that does not point back here yet. */
+	const lacksReciprocal = (target) => {
+		const info = infoOf(target);
+		return !!info && info.valid && info.relationsEditable && target !== doc.path && !info.relations.some((x) => x.character === doc.path);
+	};
+	/** Adds the relation `target` → this character in `target`'s own file. */
+	const writeReciprocal = async (target, type) => {
+		const other = label(target);
+		try {
+			const disk = granite.documents.text(target) === null ? await granite.files.readText(target) : "";
+			const r = parse(granite.documents.text(target) ?? disk);
+			if (!r.ok) throw new Error(INVALID_FILE);
+			if ("relations" in r.data.kept) {
+				if (!destroyed) granite.ui.toast(`A ficha de ${other} tem relações em formato não reconhecido — edite como texto`);
+			} else if (r.data.relations.some((x) => x.character === doc.path)) {
+				if (!destroyed) granite.ui.toast(`A ficha de ${other} já tem essa relação`);
+			} else {
+				const rel = newRelation(doc.path);
+				rel.type = type;
+				r.data.relations.push(rel);
+				await granite.files.write(target, serialize(r.data));
+				if (!destroyed) granite.ui.toast(`Relação adicionada na ficha de ${other}`);
+			}
+		} catch (e) {
+			if (!destroyed) granite.ui.toast(`Não foi possível adicionar na ficha de ${other}: ${e instanceof Error ? e.message : String(e)}`);
+		}
+		if (!destroyed) await refreshIndex().catch(() => {});
+	};
+	/** Asks the type of the reciprocal relation, then writes it. */
+	const showReciprocal = (target, type) => {
+		const other = label(target);
+		const title = `Adicionar também na ficha de ${other}`;
+		const input = h("input", {
+			class: "pg-input pg-recip-type",
+			attrs: {
+				type: "text",
+				placeholder: "tipo (opcional)",
+				"aria-label": "Tipo de relação",
+				list: `${uid}-relations`
+			}
+		});
+		input.value = SYMMETRIC_RELATIONS.includes(type.trim().toLowerCase()) ? type.trim() : "";
+		const submit = () => {
+			const v = input.value.trim();
+			o.close();
+			writeReciprocal(target, v);
+		};
+		input.addEventListener("keydown", (e) => {
+			if (e.key !== "Enter") return;
+			e.preventDefault();
+			submit();
+		});
+		const box = h("div", { class: "pg-picker pg-dialog" }, h("h3", {
+			class: "pg-picker-title",
+			text: title
+		}), h("p", {
+			class: "pg-picker-status",
+			text: `${other} → ${ownName()}`
+		}), input, h("div", { class: "pg-picker-actions" }, button("Cancelar", "pg-btn", () => o.close()), button("Adicionar", "pg-btn pg-btn-primary", submit)));
+		const o = overlay(box, title);
+		input.focus();
+	};
+	/** Adds a relation to `path` on this sheet, focusing its type. */
+	const addRelation = (path) => edit((d) => d.relations.push(newRelation(path)), {
+		rerender: true,
+		focus: `rel:${data ? data.relations.length : 0}:type`
+	});
+	/** Who points to this character, with the types each one gave. */
+	const citers = () => (index?.characters ?? []).filter((x) => x.path !== doc.path && x.relations.some((r) => r.character === doc.path)).map((x) => ({
+		path: x.path,
+		types: [...new Set(x.relations.filter((r) => r.character === doc.path).map((r) => r.type.trim()).filter(Boolean))]
+	}));
+	/** Everything the relations section shows from the index, to skip redraws that change nothing. */
+	const indexView = (c) => JSON.stringify([
+		index === null,
+		c.relations.map((r) => [label(r.character), lacksReciprocal(r.character)]),
+		citers().map((x) => [
+			x.path,
+			label(x.path),
+			x.types
+		])
+	]);
 	const relations = (c) => {
+		shownView = indexView(c);
 		const list = h("ul", { class: "pg-list" });
 		c.relations.forEach((r, i) => {
-			const link = button(baseName(r.character) || "(sem personagem)", "pg-link", () => r.character && open(r.character));
+			const link = button(r.character ? label(r.character) : "(sem personagem)", "pg-link", () => r.character && open(r.character));
 			link.title = r.character;
 			link.dataset.key = `rel:${i}:link`;
 			const type = field(`rel:${i}:type`, r.type, (d, v) => d.relations[i].type = v, {
@@ -1003,7 +1352,13 @@ function createSheet(granite, container, doc) {
 				label: "Tipo de relação",
 				guard: relationTargets
 			});
-			list.append(h("li", { class: "pg-row" }, link, type, rowTools("rel", i, c.relations.length, (d) => d.relations, relationTargets)));
+			const extra = [];
+			if (!isReadonly() && lacksReciprocal(r.character)) {
+				const back = button("⇄", "pg-icon-btn pg-recip", () => showReciprocal(r.character, r.type), `Adicionar também na ficha de ${label(r.character)}`);
+				back.dataset.key = `rel:${i}:back`;
+				extra.push(back);
+			}
+			list.append(h("li", { class: "pg-row" }, link, type, rowTools("rel", i, c.relations.length, (d) => d.relations, relationTargets, extra)));
 		});
 		if (c.relations.length === 0) list.append(h("li", {
 			class: "pg-empty",
@@ -1012,13 +1367,62 @@ function createSheet(granite, container, doc) {
 		const add = addButton("rel", "Adicionar relação", () => showPicker({
 			title: "Adicionar relação",
 			empty: "Nenhum outro personagem (.character) no vault",
-			load: () => walkFiles(granite, (p) => isCharacter(p) && p !== doc.path),
-			pick: (path) => edit((d) => d.relations.push(newRelation(path)), {
-				rerender: true,
-				focus: `rel:${data ? data.relations.length : 0}:type`
-			})
+			load: async () => {
+				const fresh = refreshIndex();
+				const r = index ?? await fresh;
+				if (index) fresh.catch(() => {});
+				return {
+					paths: r.characters.map((x) => x.path).filter((p) => p !== doc.path),
+					partial: r.partial
+				};
+			},
+			name: label,
+			pick: addRelation
 		}));
-		return section("relations", "Relações", list, add);
+		return section("relations", "Relações", list, add, citedBy(c));
+	};
+	/** "Citado por": the characters whose relations point to this one (read-only). */
+	const citedBy = (c) => {
+		const list = h("ul", { class: "pg-list pg-cited" });
+		if (!index) list.append(h("li", {
+			class: "pg-empty",
+			text: "Carregando…"
+		}));
+		else {
+			const from = citers();
+			for (const x of from) {
+				const link = button(label(x.path), "pg-link", () => open(x.path));
+				link.title = x.path;
+				link.dataset.key = `cited:${x.path}:link`;
+				const row = h("li", { class: "pg-row" }, link, h("span", {
+					class: "pg-cited-type",
+					text: x.types.join(", ")
+				}));
+				if (!isReadonly() && !c.relations.some((r) => r.character === x.path)) {
+					const back = button("Retribuir", "pg-btn pg-cited-back", () => addRelation(x.path), `Retribuir: adicionar ${label(x.path)} nas relações de ${ownName()}`);
+					back.dataset.key = `cited:${x.path}:back`;
+					row.append(back);
+				}
+				list.append(row);
+			}
+			if (from.length === 0) list.append(h("li", {
+				class: "pg-empty",
+				text: "Nenhum personagem cita este ainda."
+			}));
+		}
+		return h("div", { class: "pg-field" }, h("h3", {
+			class: "pg-label pg-subtitle",
+			text: "Citado por"
+		}), list);
+	};
+	/** Redraws only the relations section (after the index changed), keeping the focus in it. */
+	const renderRelations = () => {
+		if (destroyed || !data) return;
+		const old = page.querySelector(".pg-section-relations");
+		if (!old || indexView(data) === shownView) return;
+		const snap = old.contains(document.activeElement) ? snapshot() : null;
+		old.replaceWith(relations(data));
+		restore(snap);
 	};
 	const appearances = (c) => {
 		const list = h("ul", { class: "pg-list" });
@@ -1105,6 +1509,7 @@ function createSheet(granite, container, doc) {
 		restore(snap);
 	}
 	render(null);
+	refreshIndex().catch(() => {});
 	return {
 		getContent: () => text,
 		reload(content) {
@@ -1138,6 +1543,9 @@ function createSheet(granite, container, doc) {
 			if (destroyed) return;
 			destroyed = true;
 			closeOverlay();
+			clearTimeout(indexTimer);
+			for (const d of subs) d.dispose();
+			subs.length = 0;
 			urls.clear();
 			for (const url of made) URL.revokeObjectURL(url);
 			made.clear();

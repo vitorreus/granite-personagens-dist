@@ -13,4 +13,4 @@ Depois, em ⚙ → **Plugins**, ative **Personagens** e recarregue.
 ## Usar
 Crie um arquivo `.character` pela árvore de arquivos (**Novo arquivo** → `Akari.character`); a ficha abre automaticamente.
 
-Versão 0.1.0 (fonte 3c43326).
+Versão 0.1.0 (fonte a29e220).
