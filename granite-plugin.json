@@ -1,0 +1,14 @@
+{
+  "id": "personagens",
+  "name": "Personagens",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "main": "main.js",
+  "styles": ["styles.css"],
+  "description": "Fichas de personagem para histórias (arquivos .character)",
+  "contributes": {
+    "editors": [
+      { "id": "ficha", "title": "Ficha de personagem", "patterns": ["*.character"], "content": "text" }
+    ]
+  }
+}
