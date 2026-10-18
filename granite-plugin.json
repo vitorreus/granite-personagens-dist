@@ -9,6 +9,19 @@
   "contributes": {
     "editors": [
       { "id": "ficha", "title": "Ficha de personagem", "patterns": ["*.character"], "content": "text" }
-    ]
+    ],
+    "commands": [
+      { "id": "compare", "title": "Comparar personalidades" },
+      { "id": "compareFolder", "title": "Comparar personagens desta pasta" }
+    ],
+    "views": [
+      { "id": "comparacao", "title": "Comparação de personalidades" }
+    ],
+    "menus": {
+      "fileExplorer": [
+        { "command": "compare", "title": "Comparar personalidades", "when": { "files": ["*.character"], "min": 2 } },
+        { "command": "compareFolder", "title": "Comparar personagens desta pasta", "when": { "folders": true, "max": 1 } }
+      ]
+    }
   }
 }

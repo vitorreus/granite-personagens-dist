@@ -33,6 +33,396 @@ function baseName(path) {
 	return dot > 0 ? name.slice(0, dot) : name;
 }
 //#endregion
+//#region src/questionnaire.ts
+/** Answer scale, 1–5. */
+var ANSWERS = [
+	{
+		value: 1,
+		short: "DT",
+		label: "Discordo totalmente"
+	},
+	{
+		value: 2,
+		short: "D",
+		label: "Discordo"
+	},
+	{
+		value: 3,
+		short: "N",
+		label: "Nem concordo nem discordo"
+	},
+	{
+		value: 4,
+		short: "C",
+		label: "Concordo"
+	},
+	{
+		value: 5,
+		short: "CT",
+		label: "Concordo totalmente"
+	}
+];
+/** The items of each trait, by trait id, in the IPIP order. */
+var ITEMS = Object.fromEntries(Object.entries({
+	warmth: [[
+		"Sabe consolar os outros.",
+		"Gosta de reunir as pessoas.",
+		"Sente as emoções dos outros.",
+		"Interessa-se pela vida das outras pessoas.",
+		"Anima as pessoas.",
+		"Deixa as pessoas à vontade.",
+		"Arranja tempo para os outros."
+	], [
+		"Não gosta de se envolver nos problemas dos outros.",
+		"Não se interessa muito pelos outros.",
+		"Tenta não pensar nos necessitados."
+	]],
+	intellect: [[
+		"Faz comentários perspicazes.",
+		"Sabe a resposta de muitas perguntas.",
+		"Tende a analisar as coisas.",
+		"Usa a cabeça.",
+		"Aprende rápido.",
+		"Rebate os argumentos dos outros.",
+		"Pensa bem antes de agir.",
+		"Pesa os prós e os contras."
+	], [
+		"Considera-se uma pessoa comum.",
+		"Confunde-se com facilidade.",
+		"Sabe que não é uma pessoa especial.",
+		"Tem vocabulário pobre.",
+		"Pula palavras difíceis quando lê."
+	]],
+	emotionalStability: [[
+		"Raramente fica triste.",
+		"Sente-se bem consigo.",
+		"Supera reveses com facilidade.",
+		"Na maior parte do tempo, está em paz.",
+		"Não se frustra com facilidade."
+	], [
+		"Tem mudanças de humor frequentes.",
+		"Fica triste com frequência.",
+		"Não gosta de si.",
+		"Sente desespero.",
+		"Desanima com facilidade."
+	]],
+	assertiveness: [[
+		"Assume o comando.",
+		"Quer estar no comando.",
+		"Diz o que pensa.",
+		"Não tem medo de criticar.",
+		"Toma as rédeas da situação.",
+		"É capaz de tomar medidas duras."
+	], [
+		"Espera os outros tomarem a iniciativa.",
+		"Nunca questiona as coisas.",
+		"Deixa os outros decidirem.",
+		"Deixa-se dominar pelos outros."
+	]],
+	gregariousness: [[
+		"É a alma da festa.",
+		"Adora festas grandes.",
+		"Brinca muito.",
+		"Gosta de estar no meio de uma multidão barulhenta.",
+		"Diverte os amigos.",
+		"Faz loucuras."
+	], [
+		"Raramente brinca.",
+		"Não gosta de eventos lotados.",
+		"Demora a rir de uma piada.",
+		"Não gosta de música alta."
+	]],
+	dutifulness: [[
+		"Acha que as leis devem ser aplicadas com rigor.",
+		"Tenta seguir as regras.",
+		"Acredita numa única religião verdadeira.",
+		"Respeita a autoridade.",
+		"Gosta de ficar de pé durante o hino nacional."
+	], [
+		"Resiste à autoridade.",
+		"Quebra regras.",
+		"Fala palavrões.",
+		"Opõe-se à autoridade.",
+		"Sabe como contornar as regras."
+	]],
+	socialConfidence: [[
+		"Sente-se à vontade perto de outras pessoas.",
+		"Conversa com muita gente diferente nas festas.",
+		"Não se importa de ser o centro das atenções.",
+		"Faz amigos com facilidade.",
+		"Puxa conversa."
+	], [
+		"Acha difícil se aproximar dos outros.",
+		"Costuma se sentir desconfortável perto dos outros.",
+		"Tem pouco a dizer.",
+		"Fica em silêncio perto de estranhos.",
+		"Fica em segundo plano."
+	]],
+	sensitivity: [[
+		"Gosta de ler.",
+		"Gosta de discutir filmes e livros com os outros.",
+		"Lê muito.",
+		"Não gosta de filmes de ação.",
+		"Chora vendo filmes.",
+		"Adora flores."
+	], [
+		"Não gosta de assistir a apresentações de dança.",
+		"Não gosta de poesia.",
+		"Não gosta de ficção.",
+		"Raramente percebe as próprias reações emocionais."
+	]],
+	distrust: [[
+		"Tem dificuldade de perdoar os outros.",
+		"Suspeita de segundas intenções nos outros.",
+		"Fica com o pé atrás com os outros.",
+		"Desconfia das pessoas.",
+		"Acha que as pessoas raramente contam toda a verdade.",
+		"Acha que as pessoas são essencialmente más."
+	], [
+		"Confia no que as pessoas dizem.",
+		"Confia nos outros.",
+		"Acredita que os outros têm boas intenções.",
+		"Acredita que, no fundo, as pessoas são corretas."
+	]],
+	imagination: [[
+		"Faz coisas que os outros acham estranhas.",
+		"Gosta de se perder em pensamentos.",
+		"Adora voos de fantasia.",
+		"Adora sonhar acordado.",
+		"Nada contra a corrente.",
+		"Assume posições fora do comum.",
+		"Faz coisas inesperadas."
+	], [
+		"Faz tudo conforme o manual.",
+		"Raramente sonha acordado.",
+		"Raramente se perde em pensamentos."
+	]],
+	reserve: [[
+		"Revela pouco sobre si.",
+		"É difícil de conhecer.",
+		"Não fala muito.",
+		"Reprime os sentimentos.",
+		"Guarda os pensamentos para si."
+	], [
+		"Fala abertamente de si com os outros.",
+		"Fala abertamente dos próprios sentimentos.",
+		"Revela seus pensamentos íntimos.",
+		"Demonstra o que sente.",
+		"Fala de si de boa vontade."
+	]],
+	anxiety: [[
+		"Tem medo de fazer a coisa errada.",
+		"Sente-se sob ameaça com facilidade.",
+		"Magoa-se com facilidade.",
+		"Preocupa-se com as coisas.",
+		"Passa tempo pensando em erros do passado.",
+		"Sente culpa quando diz \"não\".",
+		"Desmorona diante de reveses."
+	], [
+		"Não se preocupa com o que já aconteceu.",
+		"Não se incomoda facilmente com as coisas.",
+		"Não se deixa desanimar pelos outros."
+	]],
+	complexity: [[
+		"Acredita na importância da arte.",
+		"Adora inventar novos jeitos de fazer as coisas.",
+		"Gosta de ouvir ideias novas.",
+		"Leva a conversa a um nível mais alto.",
+		"Prefere variedade à rotina."
+	], [
+		"Evita discussões filosóficas.",
+		"Raramente procura um sentido mais profundo nas coisas.",
+		"Não se interessa por discussões teóricas.",
+		"Não se interessa por ideias abstratas.",
+		"Tenta evitar pessoas complicadas."
+	]],
+	introversion: [[
+		"Quer ficar só.",
+		"Prefere fazer as coisas por conta própria.",
+		"Gosta de passar tempo consigo.",
+		"Procura sossego.",
+		"Não se importa de comer só.",
+		"Gosta do silêncio.",
+		"Valoriza a própria privacidade."
+	], [
+		"Gosta de fazer parte de um grupo.",
+		"Gosta de trabalhar em equipe.",
+		"Não vive sem a companhia dos outros."
+	]],
+	orderliness: [[
+		"Quer tudo \"do jeito certo\".",
+		"Faz as tarefas logo.",
+		"Gosta de ordem.",
+		"Continua até tudo ficar perfeito.",
+		"É exigente no trabalho."
+	], [
+		"Não se incomoda com pessoas bagunceiras.",
+		"Não se incomoda com desordem.",
+		"Deixa o quarto bagunçado.",
+		"Deixa suas coisas espalhadas.",
+		"Adia tarefas desagradáveis."
+	]],
+	emotionality: [[
+		"Irrita-se facilmente.",
+		"Fica com raiva facilmente.",
+		"Julga os outros rapidamente.",
+		"Incomoda-se com os erros dos outros.",
+		"Aborrece-se com facilidade.",
+		"Não suporta contradição.",
+		"Julga as pessoas pela aparência."
+	], [
+		"Não se irrita facilmente.",
+		"Tenta perdoar e esquecer.",
+		"Tem uma palavra boa para todo mundo."
+	]]
+}).map(([trait, [plus, minus]]) => [trait, [...plus.map((text) => ({
+	text,
+	key: 1
+})), ...minus.map((text) => ({
+	text,
+	key: -1
+}))].map((x, i) => ({
+	id: `${trait}-${i + 1}`,
+	trait,
+	...x
+}))]));
+/** Position of each item id in its trait's list (for a stable order in the file). */
+var ITEM_ORDER = new Map(Object.values(ITEMS).flatMap((items) => items.map((x, i) => [x.id, i])));
+var TOTAL_ITEMS = Object.values(ITEMS).reduce((n, items) => n + items.length, 0);
+/**
+* The scale value (0–100) the answers give for `trait`: reverse-keyed items
+* count as 6 − x; the mean of the answered items (1–5) is mapped to 0–100.
+* null when no item of the trait was answered.
+*/
+function traitScore(trait, answers) {
+	let sum = 0;
+	let n = 0;
+	for (const item of ITEMS[trait] ?? []) {
+		const a = answers[item.id];
+		if (a === void 0) continue;
+		sum += item.key === 1 ? a : 6 - a;
+		n++;
+	}
+	return n === 0 ? null : Math.round((sum / n - 1) / 4 * 100);
+}
+//#endregion
+//#region src/traits.ts
+var TRAITS = [
+	{
+		id: "warmth",
+		name: "Calor humano",
+		measures: "quão empático é com os outros",
+		low: "reservado, emocionalmente distante, desinteressado dos problemas alheios, guarda-se para si",
+		high: "empático, acolhedor, interessado nos outros, une as pessoas, deixa os outros à vontade"
+	},
+	{
+		id: "intellect",
+		name: "Intelecto",
+		measures: "quão analítico é o seu pensamento",
+		low: "concreto, direto, evita complexidade, confunde-se com ideias abstratas, vocabulário simples",
+		high: "analítico, perspicaz, aprende rápido, gosta de ideias abstratas, reflete antes de agir"
+	},
+	{
+		id: "emotionalStability",
+		name: "Estabilidade emocional",
+		measures: "quão composto é sob pressão",
+		low: "reativo, de humor instável, desanima fácil, insatisfeito consigo, desesperado sob estresse",
+		high: "resiliente, estável, calmo sob pressão, supera reveses, à vontade consigo"
+	},
+	{
+		id: "assertiveness",
+		name: "Assertividade",
+		measures: "quão assertivo é com os outros",
+		low: "conciliador, evita conflito, deixa os outros liderarem, cede quando pressionado",
+		high: "assertivo, assume o comando, diz o que pensa, dirige os outros, não teme críticas"
+	},
+	{
+		id: "gregariousness",
+		name: "Expansividade",
+		measures: "quão expressivo e enérgico é",
+		low: "sério, contido, introspectivo, quieto, evita multidões e barulho, sóbrio",
+		high: "animado, enérgico, espontâneo, expressivo, adora festas, brinca, pode ser exagerado"
+	},
+	{
+		id: "dutifulness",
+		name: "Senso de dever",
+		measures: "quanto segue regras e deveres",
+		low: "inconformista, prático, resiste à autoridade, quebra regras, valoriza a liberdade",
+		high: "cumpridor, respeita a autoridade, segue regras, acredita em ordem, convencional"
+	},
+	{
+		id: "socialConfidence",
+		name: "Confiança social",
+		measures: "quão seguro é socialmente",
+		low: "tímido, hesitante, quieto com estranhos, fica em segundo plano, difícil de abordar",
+		high: "ousado, extrovertido, faz amigos fácil, à vontade com atenção, puxa conversa"
+	},
+	{
+		id: "sensitivity",
+		name: "Sensibilidade",
+		measures: "quão ligado é à estética e à emoção",
+		low: "pouco sentimental, objetivo, durão, prático, indiferente à arte, pouco nota emoções",
+		high: "sensível, estético, intuitivo, gosta de arte e ficção, comove-se com a beleza"
+	},
+	{
+		id: "distrust",
+		name: "Desconfiança",
+		measures: "quão desconfiado é dos outros",
+		low: "confiante, aceita o que dizem, presume boas intenções, vê as pessoas como boas",
+		high: "desconfiado, vigilante, cético, vê segundas intenções, custa a perdoar"
+	},
+	{
+		id: "imagination",
+		name: "Imaginação",
+		measures: "quão imaginativo e abstrato é",
+		low: "pé no chão, prático, convencional, focado em soluções, segue o manual, pouco devaneia",
+		high: "imaginativo, abstrato, absorto em ideias, sonha acordado, pode ser excêntrico"
+	},
+	{
+		id: "reserve",
+		name: "Reserva",
+		measures: "quanto guarda a vida pessoal",
+		low: "franco, aberto, fala de sentimentos e pensamentos, fácil de conhecer, transparente",
+		high: "reservado, discreto, difícil de conhecer, guarda os sentimentos para si"
+	},
+	{
+		id: "anxiety",
+		name: "Ansiedade",
+		measures: "quanto tende a se preocupar e duvidar de si",
+		low: "seguro, despreocupado, resiliente ao desânimo, sem culpa",
+		high: "preocupado, inseguro, apreensivo, magoa-se fácil, remói erros, sente culpa"
+	},
+	{
+		id: "complexity",
+		name: "Complexidade",
+		measures: "quão aberto é a ideias e experiências novas",
+		low: "tradicional, prefere o familiar e a rotina, evita discussões abstratas",
+		high: "experimental, aberto ao novo, gosta de variedade e de teoria, inventa jeitos novos"
+	},
+	{
+		id: "introversion",
+		name: "Introversão",
+		measures: "quão autossuficiente e solitário é",
+		low: "gregário, gosta de equipe, precisa de companhia, colaborativo",
+		high: "autossuficiente, solitário, individualista, prefere ficar só"
+	},
+	{
+		id: "orderliness",
+		name: "Organização",
+		measures: "quão organizado e disciplinado é",
+		low: "flexível, tolera bagunça, espontâneo, pouco exigente, adia tarefas chatas",
+		high: "perfeccionista, disciplinado, exigente, quer tudo \"do jeito certo\", termina logo"
+	},
+	{
+		id: "emotionality",
+		name: "Irritabilidade",
+		measures: "quão fácil se frustra ou se irrita",
+		low: "tranquilo, paciente, calmo, não se irrita fácil, perdoa rápido",
+		high: "tenso, impaciente, irrita-se e frustra-se fácil, incomoda-se com erros alheios"
+	}
+];
+var TRAIT_IDS = TRAITS.map((t) => t.id);
+//#endregion
 //#region src/model.ts
 var FORMAT = "granite-character";
 var INVALID_FILE = "Arquivo de personagem inválido — abra como texto para corrigir";
@@ -47,6 +437,7 @@ var TOP_KEYS = [
 	"birthday",
 	"height",
 	"role",
+	"color",
 	"appearance",
 	"personality",
 	"history",
@@ -63,8 +454,12 @@ var PERSONALITY_KEYS = [
 	"traits",
 	"speech",
 	"goal",
-	"fears"
+	"fears",
+	"scales",
+	"questionnaire"
 ];
+var SCALE_KEYS = ["value", "note"];
+var ANSWERS_KEYS = ["use", "answers"];
 var COLOR_KEYS = ["label", "color"];
 var IMAGE_KEYS = [
 	"path",
@@ -132,6 +527,57 @@ function appearanceOf(o) {
 		...l
 	};
 }
+var isScaleValue = (v) => Number.isInteger(v) && v >= 0 && v <= 100;
+function scale(o) {
+	const l = level(o, SCALE_KEYS);
+	return {
+		value: take(o, l.kept, "value", (v) => typeof v === "number" && Number.isFinite(v) ? Math.min(100, Math.max(0, Math.round(v))) : null, isScaleValue),
+		note: str(o, l.kept, "note"),
+		...l
+	};
+}
+function scalesOf(o) {
+	const l = level(o, TRAIT_IDS);
+	const byId = {};
+	for (const id of TRAIT_IDS) {
+		if (o[id] === void 0) continue;
+		byId[id] = take(o, l.kept, id, (v) => scale(isObject(v) ? v : {}), isObject, scaleJSON);
+	}
+	return {
+		byId,
+		...l
+	};
+}
+var isAnswer = (v) => Number.isInteger(v) && v >= 1 && v <= 5;
+function traitAnswers(o) {
+	const l = level(o, ANSWERS_KEYS);
+	const answers = {};
+	const badAnswers = {};
+	const raw = o.answers;
+	if (isObject(raw)) for (const [id, v] of Object.entries(raw)) isAnswer(v) ? answers[id] = v : badAnswers[id] = v;
+	else if (raw !== void 0) l.kept.answers = {
+		value: raw,
+		shown: "{}"
+	};
+	return {
+		use: take(o, l.kept, "use", (v) => v !== false, (v) => typeof v === "boolean"),
+		answers,
+		badAnswers,
+		...l
+	};
+}
+function questionnaireOf(o) {
+	const l = level(o, TRAIT_IDS);
+	const byId = {};
+	for (const id of TRAIT_IDS) {
+		if (o[id] === void 0) continue;
+		byId[id] = take(o, l.kept, id, (v) => traitAnswers(isObject(v) ? v : {}), isObject, traitAnswersJSON);
+	}
+	return {
+		byId,
+		...l
+	};
+}
 function personalityOf(o) {
 	const l = level(o, PERSONALITY_KEYS);
 	return {
@@ -139,6 +585,8 @@ function personalityOf(o) {
 		speech: str(o, l.kept, "speech"),
 		goal: str(o, l.kept, "goal"),
 		fears: str(o, l.kept, "fears"),
+		scales: take(o, l.kept, "scales", (v) => scalesOf(isObject(v) ? v : {}), isObject, scalesJSON),
+		questionnaire: take(o, l.kept, "questionnaire", (v) => questionnaireOf(isObject(v) ? v : {}), isObject, questionnaireJSON),
 		...l
 	};
 }
@@ -160,6 +608,7 @@ function normalize(raw) {
 		birthday: str(raw, k, "birthday"),
 		height: str(raw, k, "height"),
 		role: str(raw, k, "role"),
+		color: str(raw, k, "color"),
 		appearance: take(raw, k, "appearance", (v) => appearanceOf(isObject(v) ? v : {}), isObject, appearanceJSON),
 		personality: take(raw, k, "personality", (v) => personalityOf(isObject(v) ? v : {}), isObject, personalityJSON),
 		history: str(raw, k, "history"),
@@ -233,6 +682,55 @@ function appearanceJSON(a) {
 		...a.extra
 	};
 }
+/** A scale without a value or a note leaves those keys out. */
+function scaleJSON(x) {
+	const o = {};
+	const value = out(x.kept, "value", x.value);
+	if (value !== null) o.value = value;
+	const note = out(x.kept, "note", x.note);
+	if (note !== "") o.note = note;
+	return {
+		...o,
+		...x.extra
+	};
+}
+/** Known traits in the documented order, then unknown ids. */
+function scalesJSON(s) {
+	const o = {};
+	for (const id of TRAIT_IDS) {
+		const x = s.byId[id];
+		if (x) o[id] = out(s.kept, id, scaleJSON(x));
+	}
+	return {
+		...o,
+		...s.extra
+	};
+}
+/** Answers in the items' order (unknown ids after), then the ones that are not 1–5. */
+function traitAnswersJSON(x) {
+	const order = (id) => ITEM_ORDER.get(id) ?? Infinity;
+	const ids = Object.keys(x.answers).sort((a, b) => order(a) - order(b));
+	const answers = {
+		...Object.fromEntries(ids.map((id) => [id, x.answers[id]])),
+		...x.badAnswers
+	};
+	return {
+		use: out(x.kept, "use", x.use),
+		answers: out(x.kept, "answers", answers),
+		...x.extra
+	};
+}
+function questionnaireJSON(q) {
+	const o = {};
+	for (const id of TRAIT_IDS) {
+		const x = q.byId[id];
+		if (x) o[id] = out(q.kept, id, traitAnswersJSON(x));
+	}
+	return {
+		...o,
+		...q.extra
+	};
+}
 function personalityJSON(p) {
 	const k = p.kept;
 	return {
@@ -240,6 +738,8 @@ function personalityJSON(p) {
 		speech: out(k, "speech", p.speech),
 		goal: out(k, "goal", p.goal),
 		fears: out(k, "fears", p.fears),
+		scales: out(k, "scales", scalesJSON(p.scales)),
+		questionnaire: out(k, "questionnaire", questionnaireJSON(p.questionnaire)),
 		...p.extra
 	};
 }
@@ -257,6 +757,7 @@ function toJSON(c) {
 		birthday: out(k, "birthday", c.birthday),
 		height: out(k, "height", c.height),
 		role: out(k, "role", c.role),
+		color: out(k, "color", c.color),
 		appearance: out(k, "appearance", appearanceJSON(c.appearance)),
 		personality: out(k, "personality", personalityJSON(c.personality)),
 		history: out(k, "history", c.history),
@@ -295,116 +796,105 @@ var newRelation = (character) => ({
 	extra: {},
 	kept: {}
 });
-//#endregion
-//#region src/vault.ts
-var IMAGE_EXTENSIONS = [
-	"png",
-	"jpg",
-	"jpeg",
-	"gif",
-	"webp",
-	"svg",
-	"avif",
-	"bmp"
-];
-var MIME = {
-	png: "image/png",
-	jpg: "image/jpeg",
-	jpeg: "image/jpeg",
-	gif: "image/gif",
-	webp: "image/webp",
-	svg: "image/svg+xml",
-	avif: "image/avif",
-	bmp: "image/bmp"
-};
-var extOf = (path) => {
-	const name = path.slice(path.lastIndexOf("/") + 1);
-	const dot = name.lastIndexOf(".");
-	return dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
-};
-var isImage = (path) => IMAGE_EXTENSIONS.includes(extOf(path));
-var isCharacter = (path) => extOf(path) === "character";
-var imageMime = (path) => MIME[extOf(path)] ?? "application/octet-stream";
-/** Upper bound on folders visited, so a huge vault cannot stall the picker. */
-var MAX_DIRS = 2e3;
-/** Folders listed at the same time. */
-var PARALLEL = 4;
-/** Every file under the vault root whose path passes `keep`, sorted by path. */
-async function walkFiles(granite, keep, maxDirs = MAX_DIRS) {
-	const found = [];
-	const queue = [""];
-	let visited = 0;
-	while (queue.length > 0 && visited < maxDirs) {
-		const batch = queue.splice(0, Math.min(PARALLEL, maxDirs - visited));
-		visited += batch.length;
-		const listings = await Promise.all(batch.map((dir) => granite.files.list(dir).catch(() => [])));
-		for (const entries of listings) for (const e of entries) {
-			if (e.name.startsWith(".")) continue;
-			if (e.kind === "dir") queue.push(e.path);
-			else if (keep(e.path)) found.push(e.path);
-		}
-	}
-	return {
-		paths: found.sort((a, b) => a.localeCompare(b)),
-		partial: queue.length > 0
-	};
-}
-/** Files read at the same time. */
-var PARALLEL_READS = 8;
-/** What the sheet needs of the character file `path` holding `text`. */
-function characterInfo(path, text) {
-	const r = parse(text);
-	if (!r.ok) return {
-		path,
-		name: "",
-		relations: [],
-		valid: false,
-		relationsEditable: false
-	};
-	return {
-		path,
-		name: r.data.name.trim(),
-		relations: r.data.relations.map((x) => ({
-			character: x.character,
-			type: x.type
-		})),
-		valid: true,
-		relationsEditable: !("relations" in r.data.kept)
-	};
-}
 /**
-* One character. The text of an open tab (with its unsaved edits) wins over
-* the file on disk: on purpose, the index shows what the user sees in the
-* other tabs, even before it is saved (a write there is refused by the kernel
-* meanwhile, so nothing is lost). A file that cannot be read or parsed has no
-* name and no relations.
+* Sets (or, with `null`, clears) a scale's value, keeping its note. A scale
+* left with no value, no note and no unknown fields is removed.
 */
-async function readCharacter(granite, path) {
-	try {
-		return characterInfo(path, granite.documents.text(path) ?? await granite.files.readText(path));
-	} catch {
-		return {
-			path,
-			name: "",
-			relations: [],
-			valid: false,
-			relationsEditable: false
-		};
+function setScale(c, id, value) {
+	const byId = c.personality.scales.byId;
+	const s = byId[id] ?? (byId[id] = {
+		value: null,
+		note: "",
+		extra: {},
+		kept: {}
+	});
+	s.value = value === null ? null : Math.min(100, Math.max(0, Math.round(value)));
+	pruneScale(c, id);
+}
+/** Sets a scale's note (see setScale). */
+function setScaleNote(c, id, note) {
+	const byId = c.personality.scales.byId;
+	const s = byId[id] ?? (byId[id] = {
+		value: null,
+		note: "",
+		extra: {},
+		kept: {}
+	});
+	s.note = note;
+	pruneScale(c, id);
+}
+function pruneScale(c, id) {
+	const byId = c.personality.scales.byId;
+	const s = byId[id];
+	if (s && s.value === null && s.note === "" && Object.keys(s.extra).length === 0 && Object.keys(s.kept).length === 0) {
+		delete byId[id];
+		delete c.personality.scales.kept[id];
 	}
 }
-/** Every character of the vault with its name and relations (see readCharacter). */
-async function loadCharacters(granite, maxDirs = MAX_DIRS) {
-	const walk = await walkFiles(granite, isCharacter, maxDirs);
-	const characters = new Array(walk.paths.length);
-	const read = (path) => readCharacter(granite, path);
-	for (let i = 0; i < walk.paths.length; i += PARALLEL_READS) {
-		const batch = walk.paths.slice(i, i + PARALLEL_READS);
-		(await Promise.all(batch.map(read))).forEach((c, j) => characters[i + j] = c);
+/** Whether `personality.scales` can be edited without dropping a value the sheet does not understand. */
+var scalesEditable = (c) => !("personality" in c.kept) && !("scales" in c.personality.kept);
+var HEX = /^#[0-9a-f]{6}$/i;
+/** Colors given to characters without one, picked by their path. */
+var AUTO_COLORS = [
+	"#7b61ff",
+	"#e5484d",
+	"#30a46c",
+	"#f76b15",
+	"#0090ff",
+	"#d6409f",
+	"#12a594",
+	"#ffb224",
+	"#8e4ec6",
+	"#6e56cf"
+];
+/** The character's color: its own, else its first appearance color, else one picked by its path. */
+function characterColor(c, path) {
+	if (c && HEX.test(c.color)) return c.color;
+	const first = c?.appearance.colors.find((x) => HEX.test(x.color));
+	if (first) return first.color;
+	let hash = 0;
+	for (const ch of path) hash = hash * 31 + ch.charCodeAt(0) >>> 0;
+	return AUTO_COLORS[hash % AUTO_COLORS.length];
+}
+/** Whether `personality.questionnaire` can be edited without dropping a value the sheet does not understand. */
+var questionnaireEditable = (c) => !("personality" in c.kept) && !("questionnaire" in c.personality.kept);
+var answersOf = (c, trait) => {
+	const byId = c.personality.questionnaire.byId;
+	return byId[trait] ?? (byId[trait] = {
+		use: true,
+		answers: {},
+		badAnswers: {},
+		extra: {},
+		kept: {}
+	});
+};
+/** Removes a trait's entry once it holds nothing but the defaults. */
+function pruneAnswers(c, trait) {
+	const x = c.personality.questionnaire.byId[trait];
+	const empty = (o) => Object.keys(o).length === 0;
+	if (x && x.use && empty(x.answers) && empty(x.badAnswers) && empty(x.extra) && empty(x.kept)) {
+		delete c.personality.questionnaire.byId[trait];
+		delete c.personality.questionnaire.kept[trait];
 	}
-	return {
-		characters,
-		partial: walk.partial
-	};
+}
+/** Records (or, with `null`, removes) the answer 1–5 to an item. */
+function setAnswer(c, trait, item, value) {
+	const x = answersOf(c, trait);
+	delete x.badAnswers[item];
+	if (value === null) delete x.answers[item];
+	else x.answers[item] = value;
+	pruneAnswers(c, trait);
+}
+/** Whether a trait's answers are used to calculate its position. */
+function setUseAnswers(c, trait, use) {
+	answersOf(c, trait).use = use;
+	pruneAnswers(c, trait);
+}
+/** Forgets every answer (the scale values stay). */
+function clearAnswers(c) {
+	const q = c.personality.questionnaire;
+	q.byId = {};
+	q.kept = {};
 }
 //#endregion
 //#region src/search.ts
@@ -507,6 +997,1065 @@ function rank(items, query, searchable) {
 	})).filter((x) => x.s > 0).sort((a, b) => b.s - a.s || a.i - b.i).map((x) => x.item);
 }
 //#endregion
+//#region src/vault.ts
+var IMAGE_EXTENSIONS = [
+	"png",
+	"jpg",
+	"jpeg",
+	"gif",
+	"webp",
+	"svg",
+	"avif",
+	"bmp"
+];
+var MIME = {
+	png: "image/png",
+	jpg: "image/jpeg",
+	jpeg: "image/jpeg",
+	gif: "image/gif",
+	webp: "image/webp",
+	svg: "image/svg+xml",
+	avif: "image/avif",
+	bmp: "image/bmp"
+};
+var extOf = (path) => {
+	const name = path.slice(path.lastIndexOf("/") + 1);
+	const dot = name.lastIndexOf(".");
+	return dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
+};
+var isImage = (path) => IMAGE_EXTENSIONS.includes(extOf(path));
+var isCharacter = (path) => extOf(path) === "character";
+var imageMime = (path) => MIME[extOf(path)] ?? "application/octet-stream";
+/** Upper bound on folders visited, so a huge vault cannot stall the picker. */
+var MAX_DIRS = 2e3;
+/** Folders listed at the same time. */
+var PARALLEL = 4;
+/** Every file under `root` (default: the vault root) whose path passes `keep`, sorted by path. */
+async function walkFiles(granite, keep, maxDirs = MAX_DIRS, root = "") {
+	const found = [];
+	const queue = [root];
+	let visited = 0;
+	while (queue.length > 0 && visited < maxDirs) {
+		const batch = queue.splice(0, Math.min(PARALLEL, maxDirs - visited));
+		visited += batch.length;
+		const listings = await Promise.all(batch.map((dir) => granite.files.list(dir).catch(() => [])));
+		for (const entries of listings) for (const e of entries) {
+			if (e.name.startsWith(".")) continue;
+			if (e.kind === "dir") queue.push(e.path);
+			else if (keep(e.path)) found.push(e.path);
+		}
+	}
+	return {
+		paths: found.sort((a, b) => a.localeCompare(b)),
+		partial: queue.length > 0
+	};
+}
+/** Files read at the same time. */
+var PARALLEL_READS = 8;
+/** What the sheet needs of the character file `path` holding `text`. */
+function characterInfo(path, text) {
+	const r = parse(text);
+	if (!r.ok) return {
+		path,
+		name: "",
+		relations: [],
+		valid: false,
+		relationsEditable: false
+	};
+	return {
+		path,
+		name: r.data.name.trim(),
+		relations: r.data.relations.map((x) => ({
+			character: x.character,
+			type: x.type
+		})),
+		valid: true,
+		relationsEditable: !("relations" in r.data.kept)
+	};
+}
+/**
+* One character. The text of an open tab (with its unsaved edits) wins over
+* the file on disk: on purpose, the index shows what the user sees in the
+* other tabs, even before it is saved (a write there is refused by the kernel
+* meanwhile, so nothing is lost). A file that cannot be read or parsed has no
+* name and no relations.
+*/
+async function readCharacter(granite, path) {
+	try {
+		return characterInfo(path, granite.documents.text(path) ?? await granite.files.readText(path));
+	} catch {
+		return {
+			path,
+			name: "",
+			relations: [],
+			valid: false,
+			relationsEditable: false
+		};
+	}
+}
+/** Every character of the vault with its name and relations (see readCharacter). */
+async function loadCharacters(granite, maxDirs = MAX_DIRS) {
+	const walk = await walkFiles(granite, isCharacter, maxDirs);
+	const characters = new Array(walk.paths.length);
+	const read = (path) => readCharacter(granite, path);
+	for (let i = 0; i < walk.paths.length; i += PARALLEL_READS) {
+		const batch = walk.paths.slice(i, i + PARALLEL_READS);
+		(await Promise.all(batch.map(read))).forEach((c, j) => characters[i + j] = c);
+	}
+	return {
+		characters,
+		partial: walk.partial
+	};
+}
+//#endregion
+//#region src/overlay.ts
+var PARTIAL_LIST = "Lista parcial — refine a busca";
+/** Items shown at most in a picker. */
+var PICKER_MAX = 300;
+var blobURL = (bytes, path) => URL.createObjectURL(new Blob([bytes], { type: imageMime(path) }));
+/**
+* Overlays drawn in `layer`; `page` holds the elements that get the focus
+* back. `alive` is false once the owner is destroyed (late results dropped).
+*/
+function createOverlays(granite, layer, page, alive) {
+	/** Releases what the open overlay holds (its blob URLs, timers). */
+	let overlayCleanup = null;
+	const close = (restore) => {
+		const cleanup = overlayCleanup;
+		overlayCleanup = null;
+		cleanup?.();
+		layer.replaceChildren();
+		if (!(restore instanceof HTMLElement)) return;
+		const key = restore.dataset.key;
+		(restore.isConnected ? restore : key ? [...page.querySelectorAll("[data-key]")].find((e) => e.dataset.key === key) : void 0)?.focus();
+	};
+	const overlay = (content, label, cls = "", cleanup) => {
+		close();
+		const back = document.activeElement;
+		const closeThis = () => {
+			if (o.isConnected) close(back);
+		};
+		const o = h("div", {
+			class: `pg-overlay ${cls}`.trim(),
+			attrs: {
+				role: "dialog",
+				"aria-modal": "true",
+				"aria-label": label
+			}
+		});
+		o.tabIndex = -1;
+		o.addEventListener("keydown", (e) => {
+			if (e.key === "Escape") {
+				e.preventDefault();
+				e.stopPropagation();
+				closeThis();
+			}
+		});
+		o.addEventListener("click", (e) => {
+			if (e.target === o) closeThis();
+		});
+		o.append(content);
+		layer.replaceChildren(o);
+		overlayCleanup = cleanup ?? null;
+		return {
+			el: o,
+			close: closeThis
+		};
+	};
+	const picker = (opts) => {
+		const search = h("input", {
+			class: "pg-input pg-picker-search",
+			attrs: {
+				type: "search",
+				placeholder: "Buscar pelo nome…",
+				"aria-label": "Buscar"
+			}
+		});
+		const list = h("ul", {
+			class: "pg-picker-list",
+			attrs: { role: "listbox" }
+		});
+		const status = h("p", {
+			class: "pg-picker-status",
+			text: "Carregando…"
+		});
+		const partialNote = h("p", {
+			class: "pg-picker-status pg-picker-partial",
+			text: PARTIAL_LIST
+		});
+		partialNote.hidden = true;
+		const cancel = button("Cancelar", "pg-btn", () => o.close());
+		const box = h("div", { class: "pg-picker" }, h("h3", {
+			class: "pg-picker-title",
+			text: opts.title
+		}), search, status, list, partialNote, h("div", { class: "pg-picker-actions" }, cancel));
+		let closed = false;
+		let timer;
+		const thumbURLs = /* @__PURE__ */ new Map();
+		const thumbURL = (path) => {
+			let p = thumbURLs.get(path);
+			if (!p) {
+				p = granite.files.readBytes(path).then((bytes) => closed || !alive() ? null : blobURL(bytes, path), () => null);
+				thumbURLs.set(path, p);
+			}
+			return p;
+		};
+		const loadThumb = (el) => {
+			thumbURL(el.dataset.path).then((url) => {
+				if (url && !closed) el.src = url;
+			});
+		};
+		const observer = opts.thumbs && typeof IntersectionObserver !== "undefined" ? new IntersectionObserver((entries) => {
+			for (const e of entries) {
+				if (!e.isIntersecting) continue;
+				observer.unobserve(e.target);
+				loadThumb(e.target);
+			}
+		}, {
+			root: list,
+			rootMargin: "200px"
+		}) : null;
+		const o = overlay(box, opts.title, "", () => {
+			closed = true;
+			clearTimeout(timer);
+			observer?.disconnect();
+			for (const p of thumbURLs.values()) p.then((url) => url && URL.revokeObjectURL(url));
+			thumbURLs.clear();
+		});
+		let all = [];
+		const show = () => {
+			clearTimeout(timer);
+			timer = void 0;
+			const q = search.value;
+			const nameOf = opts.name ?? baseName;
+			const items = rank(all, q, (p) => ({
+				names: [nameOf(p), baseName(p)],
+				path: p
+			}));
+			status.textContent = all.length === 0 ? opts.empty : items.length === 0 ? "Nada encontrado" : "";
+			status.hidden = status.textContent === "";
+			observer?.disconnect();
+			list.replaceChildren(...items.slice(0, PICKER_MAX).map((path, i) => {
+				const b = button("", i === 0 && q.trim() ? "pg-picker-item is-best" : "pg-picker-item", () => {
+					o.close();
+					opts.pick(path);
+				});
+				b.setAttribute("role", "option");
+				if (opts.thumbs) {
+					const thumb = h("img", {
+						class: "pg-picker-thumb",
+						attrs: { alt: "" }
+					});
+					thumb.dataset.path = path;
+					b.append(thumb);
+					if (observer) observer.observe(thumb);
+					else loadThumb(thumb);
+				}
+				b.append(h("span", {
+					class: "pg-picker-name",
+					text: nameOf(path)
+				}), h("span", {
+					class: "pg-picker-path",
+					text: path
+				}));
+				return h("li", {}, b);
+			}));
+		};
+		search.addEventListener("input", () => {
+			clearTimeout(timer);
+			timer = setTimeout(show, 150);
+		});
+		search.addEventListener("keydown", (e) => {
+			if (e.key !== "Enter") return;
+			if (timer !== void 0) show();
+			const first = list.querySelector(".pg-picker-item");
+			if (first) {
+				e.preventDefault();
+				first.click();
+			}
+		});
+		search.focus();
+		opts.load().then((r) => {
+			if (closed || !alive()) return;
+			all = r.paths;
+			partialNote.hidden = !r.partial;
+			show();
+		}, () => {
+			if (closed) return;
+			status.textContent = "Não foi possível listar os arquivos";
+		});
+	};
+	return {
+		overlay,
+		close,
+		picker
+	};
+}
+//#endregion
+//#region src/scale.ts
+/** Bubbles closer than this (in scale units) are stacked vertically. */
+var OVERLAP = 4;
+var STEP = 1;
+var BIG_STEP = 10;
+var clamp = (v) => Math.min(100, Math.max(0, Math.round(v)));
+/** The value under the pointer, from the line's box. */
+function valueAt(line, clientX) {
+	const r = line.getBoundingClientRect();
+	return r.width > 0 ? clamp((clientX - r.left) / r.width * 100) : 50;
+}
+/** The value a key gives, or undefined when the key is not a slider key. */
+function keyValue(key, shift, current) {
+	const base = current ?? 50;
+	const step = shift ? BIG_STEP : STEP;
+	switch (key) {
+		case "ArrowLeft":
+		case "ArrowDown": return current === null ? base : clamp(base - step);
+		case "ArrowRight":
+		case "ArrowUp": return current === null ? base : clamp(base + step);
+		case "PageDown": return clamp(base - BIG_STEP);
+		case "PageUp": return clamp(base + BIG_STEP);
+		case "Home": return 0;
+		case "End": return 100;
+	}
+}
+/** Vertical slot (0, 1, 2…) of each marker so that close bubbles do not hide each other. */
+function stackSlots(values) {
+	const slots = values.map(() => 0);
+	const placed = [];
+	values.forEach((v, i) => {
+		if (v === null) return;
+		let slot = 0;
+		while (placed.some((p) => p.slot === slot && Math.abs(p.v - v) < OVERLAP)) slot++;
+		slots[i] = slot;
+		placed.push({
+			v,
+			slot
+		});
+	});
+	return slots;
+}
+var setAria = (el, value) => {
+	if (value === null) el.removeAttribute("aria-valuenow");
+	else el.setAttribute("aria-valuenow", String(value));
+	el.setAttribute("aria-valuetext", value === null ? "Sem valor" : String(value));
+};
+function scaleTrack(opts) {
+	const { trait, markers } = opts;
+	const line = h("div", { class: "pg-scale-line" });
+	const slots = stackSlots(markers.map((m) => m.value));
+	const maxSlot = Math.max(0, ...slots);
+	line.style.setProperty("--pg-scale-rows", String(maxSlot + 1));
+	const place = (dot, value) => {
+		dot.hidden = value === null;
+		if (value !== null) dot.style.left = `${value}%`;
+	};
+	/** Pointer drag on `target`, moving `dot`; commits on release. */
+	const drag = (target, dot, m, startAt) => {
+		target.addEventListener("pointerdown", (e) => {
+			if (opts.readonly || m.locked || e.button !== 0) return;
+			const start = startAt(e);
+			if (start === null) return;
+			e.preventDefault();
+			e.stopPropagation();
+			target.focus({ preventScroll: true });
+			let value = start;
+			place(dot, value);
+			setAria(target, value);
+			dot.classList.add("is-dragging");
+			try {
+				target.setPointerCapture(e.pointerId);
+			} catch {}
+			const moveTo = (ev) => {
+				value = valueAt(line, ev.clientX);
+				place(dot, value);
+				setAria(target, value);
+			};
+			const stop = () => {
+				target.removeEventListener("pointermove", moveTo);
+				target.removeEventListener("pointerup", end);
+				target.removeEventListener("pointercancel", cancel);
+				dot.classList.remove("is-dragging");
+			};
+			const end = (ev) => {
+				stop();
+				moveTo(ev);
+				if (value !== m.value) opts.onCommit(m.key, value);
+			};
+			const cancel = () => {
+				stop();
+				place(dot, m.value);
+				setAria(target, m.value);
+			};
+			target.addEventListener("pointermove", moveTo);
+			target.addEventListener("pointerup", end);
+			target.addEventListener("pointercancel", cancel);
+		});
+	};
+	const keys = (target, dot, m) => {
+		target.addEventListener("keydown", (e) => {
+			if (opts.readonly || m.locked) return;
+			if (opts.single && (e.key === "Delete" || e.key === "Backspace")) {
+				if (m.value === null) return;
+				e.preventDefault();
+				place(dot, null);
+				opts.onCommit(m.key, null);
+				return;
+			}
+			const v = keyValue(e.key, e.shiftKey, m.value);
+			if (v === void 0) return;
+			e.preventDefault();
+			if (v === m.value) return;
+			place(dot, v);
+			setAria(target, v);
+			opts.onCommit(m.key, v);
+		});
+	};
+	const slider = (el, m, label) => {
+		el.setAttribute("role", "slider");
+		el.setAttribute("aria-label", label);
+		el.setAttribute("aria-valuemin", "0");
+		el.setAttribute("aria-valuemax", "100");
+		setAria(el, m.value);
+		if (opts.readonly || m.locked) el.setAttribute("aria-readonly", "true");
+		el.tabIndex = 0;
+	};
+	const bubble = (m, slot) => {
+		const dot = h("span", { class: "pg-scale-dot" });
+		if (m.color) dot.style.setProperty("--pg-dot", m.color);
+		if (m.size) dot.style.setProperty("--pg-dot-size", `${m.size}px`);
+		dot.style.setProperty("--pg-dot-slot", String(slot));
+		if (m.locked) dot.classList.add("is-locked");
+		place(dot, m.value);
+		return dot;
+	};
+	if (opts.single) {
+		const m = markers[0];
+		const dot = bubble(m, 0);
+		dot.setAttribute("aria-hidden", "true");
+		line.append(h("span", { class: "pg-scale-rule" }), dot);
+		line.dataset.key = opts.dataKey;
+		slider(line, m, trait.name);
+		line.title = m.value === null ? "Clique para posicionar" : `${trait.name}: ${m.value}`;
+		drag(line, dot, m, (e) => valueAt(line, e.clientX));
+		keys(line, dot, m);
+	} else {
+		line.append(h("span", { class: "pg-scale-rule" }));
+		markers.forEach((m, i) => {
+			if (m.value === null) return;
+			const dot = bubble(m, slots[i]);
+			dot.dataset.key = `${opts.dataKey}:${m.key}`;
+			dot.title = `${m.label}: ${m.value}`;
+			slider(dot, m, `${m.label} — ${trait.name}`);
+			drag(dot, dot, m, () => m.value);
+			keys(dot, dot, m);
+			line.append(dot);
+		});
+	}
+	if (opts.readonly) line.classList.add("is-readonly");
+	return h("div", { class: "pg-scale" }, line, h("div", { class: "pg-scale-poles" }, h("span", {
+		class: "pg-scale-pole is-low",
+		text: trait.low
+	}), h("span", {
+		class: "pg-scale-pole is-high",
+		text: trait.high
+	})));
+}
+//#endregion
+//#region src/compare.ts
+var VIEW_ID = "comparacao";
+var FULL_VIEW_ID = `personagens.${VIEW_ID}`;
+var COMPARE_TITLE = "Comparação de personalidades";
+/** Bubble diameter by role (`role` field): the main characters stand out. */
+var SIZES = {
+	protagonista: 24,
+	antagonista: 24,
+	coadjuvante: 18
+};
+var SMALL = 13;
+var bubbleSize = (role) => SIZES[role.trim().toLowerCase()] ?? SMALL;
+var within = (path, folder) => folder === "" || path.startsWith(`${folder}/`);
+/** The state as the view got it, cleaned up (it comes from another plugin's call). */
+function readState(raw) {
+	const o = typeof raw === "object" && raw !== null ? raw : {};
+	return {
+		paths: Array.isArray(o.paths) ? [...new Set(o.paths.filter((p) => typeof p === "string" && p !== ""))] : [],
+		folder: typeof o.folder === "string" ? o.folder : null
+	};
+}
+/** Same characters, or same folder: the same tab. */
+function compareKey(state) {
+	const s = readState(state);
+	return s.folder !== null ? `folder:${s.folder}` : `paths:${[...s.paths].sort().join("|")}`;
+}
+/** Opens (or focuses) the comparison of `state`; false on a Granite without view tabs. */
+async function openComparison(granite, state) {
+	if (typeof granite.views?.open !== "function") return false;
+	return granite.views.open(FULL_VIEW_ID, state, { key: compareKey(state) });
+}
+function createComparison(granite, container, ctx) {
+	const start = readState(ctx.state);
+	const folder = start.folder;
+	let destroyed = false;
+	/** The characters compared, in order. In folder mode: the folder's, then the ones added. */
+	let members = folder === null ? start.paths : [];
+	/** Folder mode: characters added from elsewhere, and the folder's removed. */
+	const added = [];
+	const removed = /* @__PURE__ */ new Set();
+	/** null: unreadable or invalid. */
+	const chars = /* @__PURE__ */ new Map();
+	const hidden = /* @__PURE__ */ new Set();
+	const locked = /* @__PURE__ */ new Set();
+	let loading = true;
+	let partial = false;
+	const root = h("div", { class: "pg-root pg-compare" });
+	const page = h("div", { class: "pg-page pg-compare-page" });
+	const layer = h("div", { class: "pg-layer" });
+	root.append(page, layer);
+	container.append(root);
+	const overlays = createOverlays(granite, layer, page, () => !destroyed);
+	const name = (path) => chars.get(path)?.name.trim() || baseName(path);
+	const toast = (m) => {
+		if (!destroyed) granite.ui.toast(m);
+	};
+	const read = async (path) => {
+		try {
+			const r = parse(granite.documents.text(path) ?? await granite.files.readText(path));
+			return r.ok ? r.data : null;
+		} catch {
+			return null;
+		}
+	};
+	const readAll = async (paths) => {
+		const got = await Promise.all(paths.map(async (p) => [p, await read(p)]));
+		for (const [p, c] of got) chars.set(p, c);
+	};
+	/** Folder mode: the folder's characters again (plus the ones added, minus the removed). */
+	const walk = async () => {
+		if (folder === null) return;
+		const r = await walkFiles(granite, isCharacter, void 0, folder);
+		partial = !!r.partial;
+		members = [.../* @__PURE__ */ new Set([...r.paths.filter((p) => !removed.has(p)), ...added])];
+	};
+	let gen = 0;
+	/** Reads everything again (the newest call wins). */
+	const refresh = async () => {
+		const mine = ++gen;
+		try {
+			await walk();
+			await readAll(members);
+		} catch (e) {
+			console.error(e);
+		}
+		if (destroyed || mine !== gen) return;
+		loading = false;
+		for (const p of [...chars.keys()]) if (!members.includes(p)) chars.delete(p);
+		render();
+	};
+	const pending = /* @__PURE__ */ new Set();
+	let timer;
+	let walkAgain = false;
+	const schedule = (path) => {
+		if (path) pending.add(path);
+		else walkAgain = true;
+		clearTimeout(timer);
+		timer = setTimeout(() => {
+			timer = void 0;
+			if (walkAgain) {
+				walkAgain = false;
+				pending.clear();
+				refresh();
+				return;
+			}
+			const paths = [...pending].filter((p) => members.includes(p));
+			pending.clear();
+			readAll(paths).then(() => !destroyed && render());
+		}, 150);
+	};
+	const subs = [granite.files.onDidChange((c) => {
+		const from = c.from;
+		if (folder !== null) {
+			if (c.type === "changed") {
+				if (members.includes(c.path)) schedule(c.path);
+			} else if (within(c.path, folder) || from !== void 0 && within(from, folder) || members.includes(c.path) || from !== void 0 && members.includes(from)) {
+				if (from !== void 0) renameMember(from, c.path);
+				schedule(null);
+			}
+			return;
+		}
+		if (c.type === "changed") {
+			if (members.includes(c.path)) schedule(c.path);
+		} else if (c.type === "deleted") {
+			const gone = members.filter((p) => p === c.path || p.startsWith(`${c.path}/`));
+			if (gone.length) {
+				members = members.filter((p) => !gone.includes(p));
+				for (const p of gone) chars.delete(p);
+				render();
+			}
+		} else if (c.type === "renamed" && from !== void 0) {
+			if (renameMember(from, c.path)) schedule(null);
+		}
+	}), granite.documents.onDidChange((d) => {
+		if (members.includes(d.path)) schedule(d.path);
+	})];
+	/** Follows a rename of a member (or a folder above it); true when one moved. */
+	function renameMember(from, to) {
+		const move = (p) => p === from ? to : p.startsWith(`${from}/`) ? to + p.slice(from.length) : p;
+		let moved = false;
+		members = members.map((p) => {
+			const n = move(p);
+			if (n !== p) {
+				moved = true;
+				chars.set(n, chars.get(p) ?? null);
+				chars.delete(p);
+				for (const set of [hidden, locked]) if (set.delete(p)) set.add(n);
+			}
+			return n;
+		});
+		for (let i = 0; i < added.length; i++) added[i] = move(added[i]);
+		return moved;
+	}
+	/** One write at a time per character. */
+	const writes = /* @__PURE__ */ new Map();
+	const writeScale = (path, trait, value) => {
+		const next = (writes.get(path) ?? Promise.resolve()).then(async () => {
+			const who = name(path);
+			try {
+				const disk = granite.documents.text(path) === null ? await granite.files.readText(path) : "";
+				const r = parse(granite.documents.text(path) ?? disk);
+				if (!r.ok) throw new Error(INVALID_FILE);
+				if (!scalesEditable(r.data)) toast(`A ficha de ${who} tem a escala em formato não reconhecido — edite como texto`);
+				else {
+					setScale(r.data, trait, value);
+					await granite.files.write(path, serialize(r.data));
+					chars.set(path, r.data);
+				}
+			} catch (e) {
+				toast(`Não foi possível gravar na ficha de ${who}: ${e instanceof Error ? e.message : String(e)}`);
+			}
+			if (!destroyed) render();
+		});
+		writes.set(path, next);
+	};
+	const remove = (path) => {
+		members = members.filter((p) => p !== path);
+		if (folder !== null) {
+			removed.add(path);
+			const i = added.indexOf(path);
+			if (i >= 0) added.splice(i, 1);
+		}
+		chars.delete(path);
+		render("cmp:add");
+	};
+	const add = (path) => {
+		if (members.includes(path)) return;
+		members = [...members, path];
+		if (folder !== null) {
+			removed.delete(path);
+			added.push(path);
+		}
+		read(path).then((c) => {
+			if (destroyed) return;
+			chars.set(path, c);
+			render(`cmp:row:${path}:name`);
+		});
+	};
+	/** Names of the characters listed by the picker. */
+	const names = /* @__PURE__ */ new Map();
+	const pick = () => overlays.picker({
+		title: "Adicionar personagem",
+		empty: "Nenhum outro personagem (.character) no vault",
+		load: async () => {
+			const r = await loadCharacters(granite);
+			for (const x of r.characters) names.set(x.path, x.name);
+			return {
+				paths: r.characters.map((x) => x.path).filter((p) => !members.includes(p)),
+				partial: r.partial
+			};
+		},
+		name: (p) => names.get(p) || baseName(p),
+		pick: add
+	});
+	const open = (path) => {
+		granite.documents.open(path).then((ok) => ok || toast("Não foi possível abrir o arquivo"), () => toast("Não foi possível abrir o arquivo"));
+	};
+	const toggle = (set, path, focus) => {
+		if (set.has(path)) set.delete(path);
+		else set.add(path);
+		render(focus);
+	};
+	const title = () => {
+		if (folder !== null) return folder === "" ? "Personagens do vault" : `Personagens — ${folder.slice(folder.lastIndexOf("/") + 1)}`;
+		if (members.length === 0) return COMPARE_TITLE;
+		const shown = members.slice(0, 3).map(name);
+		return members.length > 3 ? `${shown.join(", ")} +${members.length - 3}` : shown.join(", ");
+	};
+	const row = (path) => {
+		const c = chars.get(path);
+		const dot = h("span", { class: "pg-cmp-color" });
+		dot.style.setProperty("--pg-dot", characterColor(c ?? null, path));
+		dot.style.setProperty("--pg-dot-size", `${bubbleSize(c?.role ?? "")}px`);
+		const link = button(name(path), "pg-link", () => open(path));
+		link.title = path;
+		link.dataset.key = `cmp:row:${path}:name`;
+		const eye = button("👁", "pg-icon-btn pg-cmp-eye", () => toggle(hidden, path, `cmp:row:${path}:eye`), `${hidden.has(path) ? "Mostrar" : "Ocultar"} ${name(path)} no mapa`);
+		eye.dataset.key = `cmp:row:${path}:eye`;
+		eye.setAttribute("aria-pressed", String(hidden.has(path)));
+		const lock = button(locked.has(path) ? "🔒" : "🔓", "pg-icon-btn pg-cmp-lock", () => toggle(locked, path, `cmp:row:${path}:lock`), `${locked.has(path) ? "Destravar" : "Travar"} ${name(path)}`);
+		lock.dataset.key = `cmp:row:${path}:lock`;
+		lock.setAttribute("aria-pressed", String(locked.has(path)));
+		const rm = button("×", "pg-icon-btn pg-remove", () => remove(path), `Tirar ${name(path)} da comparação`);
+		rm.dataset.key = `cmp:row:${path}:remove`;
+		const li = h("li", { class: "pg-row pg-cmp-row" }, dot, link);
+		if (c === null) li.append(h("span", {
+			class: "pg-cited-type",
+			text: INVALID_FILE
+		}));
+		else if (c?.role) li.append(h("span", {
+			class: "pg-cited-type",
+			text: c.role
+		}));
+		li.append(h("div", { class: "pg-row-tools" }, eye, lock, rm));
+		li.classList.toggle("is-hidden", hidden.has(path));
+		return li;
+	};
+	const card = (t) => {
+		const markers = members.filter((p) => !hidden.has(p) && chars.get(p)).map((p) => {
+			const c = chars.get(p);
+			return {
+				key: p,
+				label: name(p),
+				value: c.personality.scales.byId[t.id]?.value ?? null,
+				color: characterColor(c, p),
+				size: bubbleSize(c.role),
+				locked: locked.has(p) || !scalesEditable(c)
+			};
+		});
+		const without = markers.filter((m) => m.value === null).map((m) => m.label);
+		return h("div", { class: "pg-scale-card" }, h("div", { class: "pg-scale-head" }, h("div", { class: "pg-scale-title" }, h("span", {
+			class: "pg-scale-name",
+			text: t.name
+		}), h("span", {
+			class: "pg-scale-measures",
+			text: t.measures
+		}))), scaleTrack({
+			trait: t,
+			markers,
+			dataKey: `cmp:${t.id}`,
+			onCommit: (p, v) => writeScale(p, t.id, v)
+		}), without.length ? h("p", {
+			class: "pg-cmp-without",
+			text: `Sem valor: ${without.join(", ")}`
+		}) : null);
+	};
+	/** A drag in progress: redraws wait for its end (they would drop the bubble being dragged). */
+	let dragging = false;
+	let renderPending = false;
+	page.addEventListener("pointerdown", (e) => {
+		if (e.target.closest?.(".pg-scale-dot")) dragging = true;
+	}, true);
+	const dragEnd = () => {
+		if (!dragging) return;
+		dragging = false;
+		setTimeout(() => {
+			if (renderPending && !destroyed) render();
+		}, 0);
+	};
+	window.addEventListener("pointerup", dragEnd, true);
+	window.addEventListener("pointercancel", dragEnd, true);
+	function render(focus) {
+		if (destroyed) return;
+		if (dragging) {
+			renderPending = true;
+			return;
+		}
+		renderPending = false;
+		const active = document.activeElement;
+		const keep = focus ?? (active instanceof HTMLElement && page.contains(active) ? active.dataset.key : void 0);
+		const scroll = container.scrollTop;
+		const addBtn = button("Adicionar personagem", "pg-add", pick);
+		addBtn.dataset.key = "cmp:add";
+		const subtitle = folder !== null ? `Pasta ${folder === "" ? "raiz do vault" : folder} e subpastas — ${members.length} personage${members.length === 1 ? "m" : "ns"}` : `${members.length} personage${members.length === 1 ? "m" : "ns"}`;
+		const list = h("ul", { class: "pg-list pg-cmp-list" }, ...members.map(row));
+		if (loading) list.append(h("li", {
+			class: "pg-empty",
+			text: "Carregando…"
+		}));
+		else if (members.length === 0) list.append(h("li", {
+			class: "pg-empty",
+			text: folder !== null ? "Nenhum personagem nesta pasta." : "Nenhum personagem — adicione alguns para comparar."
+		}));
+		page.replaceChildren(h("header", { class: "pg-section pg-cmp-header" }, h("h2", {
+			class: "pg-cmp-title",
+			text: COMPARE_TITLE
+		}), h("p", {
+			class: "pg-scale-measures",
+			text: subtitle
+		}), partial ? h("p", {
+			class: "pg-picker-status",
+			text: "Lista parcial — pasta grande demais"
+		}) : null), h("section", {
+			class: "pg-section",
+			attrs: { "aria-label": "Personagens" }
+		}, list, addBtn), h("section", {
+			class: "pg-section",
+			attrs: { "aria-label": "Escala de personalidade" }
+		}, h("div", { class: "pg-scales pg-cmp-scales" }, ...TRAITS.map(card))));
+		ctx.setTitle(title());
+		container.scrollTop = scroll;
+		if (keep) [...page.querySelectorAll("[data-key]")].find((e) => e.dataset.key === keep)?.focus({ preventScroll: true });
+	}
+	render();
+	refresh();
+	return {
+		focus() {
+			if (destroyed) return;
+			(page.querySelector("[data-key='cmp:add']") ?? root).focus({ preventScroll: true });
+		},
+		destroy() {
+			if (destroyed) return;
+			destroyed = true;
+			clearTimeout(timer);
+			overlays.close();
+			for (const d of subs) d.dispose();
+			window.removeEventListener("pointerup", dragEnd, true);
+			window.removeEventListener("pointercancel", dragEnd, true);
+			root.remove();
+		}
+	};
+}
+//#endregion
+//#region src/questionnaire-dialog.ts
+var QUESTIONNAIRE_TITLE = "Questionário de personalidade";
+var APPLIED = "Escala de personalidade atualizada";
+/** How many of the trait's items are answered. */
+var answered = (c, trait) => {
+	const answers = c?.personality.questionnaire.byId[trait]?.answers ?? {};
+	return (ITEMS[trait] ?? []).filter((x) => answers[x.id] !== void 0).length;
+};
+/** The first trait without answers (where a new session picks up), else the first. */
+function startPage(c) {
+	const i = TRAITS.findIndex((t) => answered(c, t.id) === 0);
+	return i < 0 ? 0 : i;
+}
+function showQuestionnaire(host) {
+	const RESULT = TRAITS.length;
+	let page = startPage(host.data());
+	/** Traits skipped with "Pular traço" in this session: not applied by default. */
+	const skipped = /* @__PURE__ */ new Set();
+	/** "Apagar respostas" asks once more before forgetting everything. */
+	let confirmClear = false;
+	const box = h("div", { class: "pg-picker pg-dialog pg-quiz" });
+	const o = host.overlay(box, QUESTIONNAIRE_TITLE, "is-quiz");
+	box.addEventListener("keydown", (e) => {
+		if (e.key !== "Tab") return;
+		const focusable = [...box.querySelectorAll("button, input")].filter((x) => !x.disabled);
+		if (focusable.length === 0) return;
+		const first = focusable[0];
+		const last = focusable[focusable.length - 1];
+		if (e.shiftKey && document.activeElement === first) {
+			e.preventDefault();
+			last.focus();
+		} else if (!e.shiftKey && document.activeElement === last) {
+			e.preventDefault();
+			first.focus();
+		}
+	});
+	const progress = () => {
+		const c = host.data();
+		const n = TRAITS.reduce((sum, t) => sum + answered(c, t.id), 0);
+		const pct = Math.round(n / TOTAL_ITEMS * 100);
+		const bar = h("div", { class: "pg-quiz-bar" });
+		bar.style.width = `${pct}%`;
+		return h("div", { class: "pg-quiz-progress" }, h("div", {
+			class: "pg-quiz-track",
+			attrs: {
+				role: "progressbar",
+				"aria-label": "Respondidas",
+				"aria-valuemin": "0",
+				"aria-valuemax": "100",
+				"aria-valuenow": String(pct)
+			}
+		}, bar), h("span", {
+			class: "pg-quiz-pct",
+			text: `${pct}%`
+		}));
+	};
+	const go = (p, focus) => {
+		page = p;
+		confirmClear = false;
+		render(focus);
+	};
+	const traitPage = (index) => {
+		const t = TRAITS[index];
+		const entry = host.data()?.personality.questionnaire.byId[t.id];
+		const answers = entry?.answers ?? {};
+		const use = h("input", { attrs: {
+			type: "checkbox",
+			id: `${host.uid}-quiz-use`
+		} });
+		use.checked = entry?.use ?? true;
+		use.dataset.key = "quiz:use";
+		use.addEventListener("change", () => {
+			const v = use.checked;
+			if (!host.edit((d) => setUseAnswers(d, t.id, v))) use.checked = !v;
+		});
+		const head = h("div", {
+			class: "pg-quiz-row pg-quiz-head",
+			attrs: { "aria-hidden": "true" }
+		}, h("span", {
+			class: "pg-quiz-text",
+			text: "Afirmação"
+		}), ...ANSWERS.map((a) => h("span", {
+			class: "pg-quiz-answer-head",
+			text: a.short,
+			attrs: { title: a.label }
+		})));
+		const rows = ITEMS[t.id].map((item) => {
+			const row = h("div", {
+				class: "pg-quiz-row",
+				attrs: {
+					role: "radiogroup",
+					"aria-label": item.text
+				}
+			}, h("span", {
+				class: "pg-quiz-text",
+				text: item.text
+			}));
+			for (const a of ANSWERS) {
+				const r = h("input", {
+					class: `pg-quiz-radio is-${a.value}`,
+					attrs: {
+						type: "radio",
+						name: `${host.uid}-quiz-${item.id}`,
+						"aria-label": a.label,
+						title: a.label
+					}
+				});
+				r.value = String(a.value);
+				r.checked = answers[item.id] === a.value;
+				r.dataset.key = `quiz:${item.id}:${a.value}`;
+				r.addEventListener("change", () => {
+					if (!r.checked) return;
+					if (host.edit((d) => setAnswer(d, t.id, item.id, a.value))) box.querySelector(".pg-quiz-progress")?.replaceWith(progress());
+					else r.checked = false;
+				});
+				row.append(h("label", { class: "pg-quiz-answer" }, r));
+			}
+			return row;
+		});
+		return [h("div", { class: "pg-quiz-card" }, h("div", { class: "pg-quiz-trait" }, h("div", { class: "pg-scale-title" }, h("h4", {
+			class: "pg-quiz-trait-name",
+			text: t.name
+		}), h("span", {
+			class: "pg-scale-measures",
+			text: t.measures
+		})), h("label", {
+			class: "pg-quiz-use",
+			attrs: { for: use.id }
+		}, use, document.createTextNode(" Usar estas respostas para calcular a posição"))), h("div", { class: "pg-quiz-items" }, head, ...rows))];
+	};
+	/** Per trait: current value, calculated value and whether it is applied by default. */
+	const results = () => {
+		const c = host.data();
+		return TRAITS.map((t) => {
+			const entry = c?.personality.questionnaire.byId[t.id];
+			const current = c?.personality.scales.byId[t.id]?.value ?? null;
+			const used = entry?.use ?? true;
+			const calc = used ? traitScore(t.id, entry?.answers ?? {}) : null;
+			return {
+				t,
+				current,
+				calc,
+				why: !used ? "não usado" : calc === null ? "sem respostas" : "",
+				apply: calc !== null && !skipped.has(t.id) && calc !== current
+			};
+		});
+	};
+	const resultPage = () => {
+		const rows = results();
+		const list = h("div", { class: "pg-quiz-results" });
+		for (const r of rows) {
+			const cb = h("input", { attrs: {
+				type: "checkbox",
+				"aria-label": `Aplicar ${r.t.name}`
+			} });
+			cb.checked = r.apply;
+			cb.disabled = r.calc === null;
+			cb.dataset.key = `quiz:apply:${r.t.id}`;
+			cb.dataset.trait = r.t.id;
+			list.append(h("label", { class: "pg-quiz-result" }, cb, h("span", {
+				class: "pg-quiz-result-name",
+				text: r.t.name
+			}), h("span", {
+				class: "pg-quiz-result-values",
+				text: `${r.current ?? "—"} → ${r.calc ?? r.why}`
+			})));
+		}
+		const clear = button(confirmClear ? "Confirmar: apagar todas as respostas" : "Apagar respostas", "pg-btn pg-quiz-clear", () => {
+			if (!confirmClear) {
+				confirmClear = true;
+				render("quiz:clear");
+				return;
+			}
+			if (host.edit((d) => clearAnswers(d))) go(RESULT, "quiz:clear");
+		});
+		clear.dataset.key = "quiz:clear";
+		return [
+			h("p", {
+				class: "pg-picker-status",
+				text: "Marque os traços cuja posição calculada deve substituir a atual. Depois, ajuste arrastando as bolinhas."
+			}),
+			list,
+			h("div", { class: "pg-quiz-clear-row" }, clear)
+		];
+	};
+	const apply = () => {
+		const chosen = [...box.querySelectorAll(".pg-quiz-results input:checked")].map((x) => x.dataset.trait);
+		const values = new Map(results().map((r) => [r.t.id, r.calc]));
+		const changes = chosen.map((id) => [id, values.get(id) ?? null]).filter(([, v]) => v !== null);
+		if (changes.length > 0 && !host.edit((d) => changes.forEach(([id, v]) => setScale(d, id, v)))) return;
+		o.close();
+		if (changes.length > 0) {
+			host.applied();
+			host.toast(APPLIED);
+		}
+	};
+	const nav = (label, key, onClick, cls = "pg-btn", disabled = false) => {
+		const b = button(label, cls, onClick);
+		b.dataset.key = key;
+		b.disabled = disabled;
+		return b;
+	};
+	function render(focus) {
+		const name = host.name();
+		const atResult = page === RESULT;
+		const body = atResult ? resultPage() : traitPage(page);
+		const left = h("div", { class: "pg-quiz-nav" }, nav("Cancelar", "quiz:cancel", () => o.close()));
+		const right = h("div", { class: "pg-quiz-nav" });
+		if (atResult) right.append(nav("Voltar", "quiz:prev", () => go(RESULT - 1, "quiz:prev")), nav("Aplicar", "quiz:apply", apply, "pg-btn pg-btn-primary"));
+		else {
+			left.append(nav("Pular restantes", "quiz:skipAll", () => go(RESULT, "quiz:apply")));
+			right.append(nav("Anterior", "quiz:prev", () => go(page - 1, "quiz:prev"), "pg-btn", page === 0), nav("Pular traço", "quiz:skip", () => {
+				skipped.add(TRAITS[page].id);
+				go(page + 1, page + 1 === RESULT ? "quiz:apply" : "quiz:skip");
+			}), nav(page === RESULT - 1 ? "Ver resultado" : "Próximo", "quiz:next", () => {
+				skipped.delete(TRAITS[page].id);
+				go(page + 1, page + 1 === RESULT ? "quiz:apply" : "quiz:next");
+			}, "pg-btn pg-btn-primary"));
+		}
+		box.replaceChildren(h("h3", {
+			class: "pg-picker-title",
+			text: atResult ? `Resultado — ${name}` : QUESTIONNAIRE_TITLE
+		}), h("p", {
+			class: "pg-picker-status",
+			text: `Responda pensando em como ${name} é — não em como você é. Para um resultado mais preciso, responda ao maior número possível de afirmações.`
+		}), progress(), h("div", { class: "pg-quiz-body" }, ...body), h("div", { class: "pg-picker-actions pg-quiz-actions" }, left, right));
+		const target = focus ? box.querySelector(`[data-key="${focus}"]`) : null;
+		(target && !target.disabled ? target : box.querySelector("input, button"))?.focus();
+	}
+	render();
+}
+//#endregion
 //#region src/sheet.ts
 var ROLE_SUGGESTIONS = [
 	"Protagonista",
@@ -550,10 +2099,8 @@ var COLOR_SUGGESTIONS = [
 ];
 var IMAGE_MISSING = "Imagem não encontrada";
 var CHIP_DRAFT = "Apelido ou traço digitado e não adicionado — pressione Enter";
-var PARTIAL_LIST = "Lista parcial — refine a busca";
+var SCALES_UNKNOWN = "Escala de personalidade em formato não reconhecido — edite como texto";
 var OPEN_FAILED = "Não foi possível abrir o arquivo";
-/** Items shown at most in a picker. */
-var PICKER_MAX = 300;
 var instances = 0;
 function createSheet(granite, container, doc) {
 	const uid = `pg${++instances}`;
@@ -569,6 +2116,8 @@ function createSheet(granite, container, doc) {
 	let reloads = 0;
 	/** Chip text typed but not added yet, by chip list ("nicknames", "traits"). */
 	const drafts = /* @__PURE__ */ new Map();
+	/** Traits whose note field is open. */
+	const openNotes = /* @__PURE__ */ new Set();
 	/** Blob URLs of the images in use, by vault path. */
 	const urls = /* @__PURE__ */ new Map();
 	const made = /* @__PURE__ */ new Set();
@@ -715,7 +2264,6 @@ function createSheet(granite, container, doc) {
 		} : snap);
 		return true;
 	};
-	const blobURL = (bytes, path) => URL.createObjectURL(new Blob([bytes], { type: imageMime(path) }));
 	/** The image's blob URL; a failed read is not cached (the next render tries again). */
 	const imageURL = (path) => {
 		let p = urls.get(path);
@@ -781,51 +2329,10 @@ function createSheet(granite, container, doc) {
 		});
 		return box;
 	};
-	/** Releases what the open overlay holds (its blob URLs, timers). */
-	let overlayCleanup = null;
-	const closeOverlay = (restore) => {
-		const cleanup = overlayCleanup;
-		overlayCleanup = null;
-		cleanup?.();
-		layer.replaceChildren();
-		if (!(restore instanceof HTMLElement)) return;
-		const key = restore.dataset.key;
-		(restore.isConnected ? restore : key ? [...page.querySelectorAll("[data-key]")].find((e) => e.dataset.key === key) : void 0)?.focus();
-	};
-	/** Shows `content` in a modal layer (Esc or a click outside closes it); returns its close. */
-	const overlay = (content, label, cls = "", cleanup) => {
-		closeOverlay();
-		const back = document.activeElement;
-		const close = () => {
-			if (o.isConnected) closeOverlay(back);
-		};
-		const o = h("div", {
-			class: `pg-overlay ${cls}`.trim(),
-			attrs: {
-				role: "dialog",
-				"aria-modal": "true",
-				"aria-label": label
-			}
-		});
-		o.tabIndex = -1;
-		o.addEventListener("keydown", (e) => {
-			if (e.key === "Escape") {
-				e.preventDefault();
-				e.stopPropagation();
-				close();
-			}
-		});
-		o.addEventListener("click", (e) => {
-			if (e.target === o) close();
-		});
-		o.append(content);
-		layer.replaceChildren(o);
-		overlayCleanup = cleanup ?? null;
-		return {
-			el: o,
-			close
-		};
-	};
+	const overlays = createOverlays(granite, layer, page, () => !destroyed);
+	const overlay = overlays.overlay;
+	const closeOverlay = overlays.close;
+	const showPicker = overlays.picker;
 	/** The enlarged image, with its own blob URL (independent of the page's, revoked on close). */
 	const showLightbox = (img) => {
 		const name = img.caption || baseName(img.path);
@@ -851,129 +2358,6 @@ function createSheet(granite, container, doc) {
 			el.src = url;
 		}, () => {
 			if (!closed) missing(box);
-		});
-	};
-	const showPicker = (opts) => {
-		const search = h("input", {
-			class: "pg-input pg-picker-search",
-			attrs: {
-				type: "search",
-				placeholder: "Buscar pelo nome…",
-				"aria-label": "Buscar"
-			}
-		});
-		const list = h("ul", {
-			class: "pg-picker-list",
-			attrs: { role: "listbox" }
-		});
-		const status = h("p", {
-			class: "pg-picker-status",
-			text: "Carregando…"
-		});
-		const partialNote = h("p", {
-			class: "pg-picker-status pg-picker-partial",
-			text: PARTIAL_LIST
-		});
-		partialNote.hidden = true;
-		const cancel = button("Cancelar", "pg-btn", () => o.close());
-		const box = h("div", { class: "pg-picker" }, h("h3", {
-			class: "pg-picker-title",
-			text: opts.title
-		}), search, status, list, partialNote, h("div", { class: "pg-picker-actions" }, cancel));
-		let closed = false;
-		let timer;
-		const thumbURLs = /* @__PURE__ */ new Map();
-		const thumbURL = (path) => {
-			let p = thumbURLs.get(path);
-			if (!p) {
-				p = granite.files.readBytes(path).then((bytes) => closed || destroyed ? null : blobURL(bytes, path), () => null);
-				thumbURLs.set(path, p);
-			}
-			return p;
-		};
-		const loadThumb = (el) => {
-			thumbURL(el.dataset.path).then((url) => {
-				if (url && !closed) el.src = url;
-			});
-		};
-		const observer = opts.thumbs && typeof IntersectionObserver !== "undefined" ? new IntersectionObserver((entries) => {
-			for (const e of entries) {
-				if (!e.isIntersecting) continue;
-				observer.unobserve(e.target);
-				loadThumb(e.target);
-			}
-		}, {
-			root: list,
-			rootMargin: "200px"
-		}) : null;
-		const o = overlay(box, opts.title, "", () => {
-			closed = true;
-			clearTimeout(timer);
-			observer?.disconnect();
-			for (const p of thumbURLs.values()) p.then((url) => url && URL.revokeObjectURL(url));
-			thumbURLs.clear();
-		});
-		let all = [];
-		const show = () => {
-			clearTimeout(timer);
-			timer = void 0;
-			const q = search.value;
-			const nameOf = opts.name ?? baseName;
-			const items = rank(all, q, (p) => ({
-				names: [nameOf(p), baseName(p)],
-				path: p
-			}));
-			status.textContent = all.length === 0 ? opts.empty : items.length === 0 ? "Nada encontrado" : "";
-			status.hidden = status.textContent === "";
-			observer?.disconnect();
-			list.replaceChildren(...items.slice(0, PICKER_MAX).map((path, i) => {
-				const b = button("", i === 0 && q.trim() ? "pg-picker-item is-best" : "pg-picker-item", () => {
-					o.close();
-					opts.pick(path);
-				});
-				b.setAttribute("role", "option");
-				if (opts.thumbs) {
-					const thumb = h("img", {
-						class: "pg-picker-thumb",
-						attrs: { alt: "" }
-					});
-					thumb.dataset.path = path;
-					b.append(thumb);
-					if (observer) observer.observe(thumb);
-					else loadThumb(thumb);
-				}
-				b.append(h("span", {
-					class: "pg-picker-name",
-					text: nameOf(path)
-				}), h("span", {
-					class: "pg-picker-path",
-					text: path
-				}));
-				return h("li", {}, b);
-			}));
-		};
-		search.addEventListener("input", () => {
-			clearTimeout(timer);
-			timer = setTimeout(show, 150);
-		});
-		search.addEventListener("keydown", (e) => {
-			if (e.key !== "Enter") return;
-			if (timer !== void 0) show();
-			const first = list.querySelector(".pg-picker-item");
-			if (first) {
-				e.preventDefault();
-				first.click();
-			}
-		});
-		search.focus();
-		opts.load().then((r) => {
-			if (closed || destroyed) return;
-			all = r.paths;
-			partialNote.hidden = !r.partial;
-			show();
-		}, () => {
-			if (closed) return;
-			status.textContent = "Não foi possível listar os arquivos";
 		});
 	};
 	const open = (path) => {
@@ -1160,7 +2544,47 @@ function createSheet(granite, container, doc) {
 			placeholder: "Nome do personagem",
 			label: "Nome",
 			class: "pg-name"
-		}), h("div", { class: "pg-grid" }, labeled("Nome em japonês", field("nameJapanese", c.nameJapanese, (d, v) => d.nameJapanese = v, { placeholder: "星野 あかり" })), labeled("Romaji", field("nameRomaji", c.nameRomaji, (d, v) => d.nameRomaji = v, { placeholder: "Hoshino Akari" }))), chips("nicknames", "Apelidos", (d) => d.nicknames), h("div", { class: "pg-grid pg-grid-4" }, labeled("Idade", field("age", c.age, (d, v) => d.age = v)), labeled("Aniversário", field("birthday", c.birthday, (d, v) => d.birthday = v, { placeholder: "dd/mm" })), labeled("Altura", field("height", c.height, (d, v) => d.height = v, { placeholder: "1,62 m" })), labeled("Papel na história", field("role", c.role, (d, v) => d.role = v, { list: "roles" })))));
+		}), h("div", { class: "pg-grid" }, labeled("Nome em japonês", field("nameJapanese", c.nameJapanese, (d, v) => d.nameJapanese = v, { placeholder: "星野 あかり" })), labeled("Romaji", field("nameRomaji", c.nameRomaji, (d, v) => d.nameRomaji = v, { placeholder: "Hoshino Akari" }))), chips("nicknames", "Apelidos", (d) => d.nicknames), h("div", { class: "pg-grid pg-grid-4" }, labeled("Idade", field("age", c.age, (d, v) => d.age = v)), labeled("Aniversário", field("birthday", c.birthday, (d, v) => d.birthday = v, { placeholder: "dd/mm" })), labeled("Altura", field("height", c.height, (d, v) => d.height = v, { placeholder: "1,62 m" })), labeled("Papel na história", field("role", c.role, (d, v) => d.role = v, { list: "roles" }))), ownColor(c)));
+	};
+	/** The character's color (bubbles, comparison); "Automática" goes back to the derived one. */
+	const ownColor = (c) => {
+		const picker = h("input", {
+			class: "pg-color",
+			attrs: {
+				type: "color",
+				"aria-label": "Cor do personagem"
+			}
+		});
+		picker.value = characterColor(c, doc.path);
+		picker.id = `${uid}-charColor`;
+		picker.dataset.key = "charColor";
+		picker.disabled = isReadonly();
+		const auto = button("Automática", "pg-btn pg-color-auto", () => edit((d) => d.color = "", {
+			rerender: true,
+			focus: "charColor"
+		}), "Usar a cor automática (a primeira cor da aparência)");
+		auto.dataset.key = "charColor:auto";
+		auto.hidden = !c.color || isReadonly();
+		picker.addEventListener("input", () => {
+			if (!picker.isConnected) return;
+			const v = picker.value;
+			if (edit((d) => d.color = v)) {
+				auto.hidden = false;
+				paintColor();
+			}
+		});
+		const row = h("div", { class: "pg-own-color" }, picker, auto);
+		return h("div", { class: "pg-field pg-own-color-field" }, h("label", {
+			class: "pg-label",
+			text: "Cor do personagem",
+			attrs: { for: `${uid}-charColor` }
+		}), row);
+	};
+	/** Applies the character's color to the bubbles without redrawing. */
+	const paintColor = () => {
+		root.style.setProperty("--pg-char", characterColor(data, doc.path));
+		const picker = page.querySelector("[data-key=\"charColor\"]");
+		if (picker && data && document.activeElement !== picker) picker.value = characterColor(data, doc.path);
 	};
 	const pickImage = () => showPicker({
 		title: "Adicionar imagem",
@@ -1188,7 +2612,7 @@ function createSheet(granite, container, doc) {
 			picker.addEventListener("input", () => {
 				if (!picker.isConnected) return;
 				const v = picker.value;
-				edit((d) => d.appearance.colors[i].color = v, { guard: colorCount });
+				if (edit((d) => d.appearance.colors[i].color = v, { guard: colorCount })) paintColor();
 			});
 			const label = field(`color:${i}:label`, col.label, (d, v) => d.appearance.colors[i].label = v, {
 				placeholder: "cabelo, olhos…",
@@ -1245,6 +2669,100 @@ function createSheet(granite, container, doc) {
 			text: "Imagens de referência"
 		}), gallery, addButton("img", "Adicionar imagem", pickImage)));
 	};
+	/** "Escala de personalidade": the 16 traits, each a line with this character's bubble and a note. */
+	const scales = (c) => {
+		const editable = scalesEditable(c);
+		const ro = isReadonly() || !editable;
+		const grid = h("div", { class: "pg-scales" });
+		for (const t of TRAITS) {
+			const s = c.personality.scales.byId[t.id];
+			const value = s?.value ?? null;
+			const note = s?.note ?? "";
+			const open = openNotes.has(t.id);
+			const noteBtn = button("✎", "pg-icon-btn pg-scale-note-btn", () => {
+				if (openNotes.has(t.id)) openNotes.delete(t.id);
+				else openNotes.add(t.id);
+				renderScales(openNotes.has(t.id) ? `scale:${t.id}:note` : `scale:${t.id}:noteBtn`);
+			}, `Nota: ${t.name}`);
+			noteBtn.dataset.key = `scale:${t.id}:noteBtn`;
+			noteBtn.setAttribute("aria-expanded", String(open));
+			noteBtn.classList.toggle("has-note", note.trim() !== "");
+			if (note.trim()) noteBtn.title = `Nota: ${note}`;
+			const tools = h("div", { class: "pg-row-tools" }, noteBtn);
+			if (value !== null && !ro) {
+				const clear = button("×", "pg-icon-btn pg-remove", () => commitScale(t.id, null, `scale:${t.id}`), `Limpar ${t.name}`);
+				clear.dataset.key = `scale:${t.id}:clear`;
+				tools.append(clear);
+			}
+			const card = h("div", { class: "pg-scale-card" }, h("div", { class: "pg-scale-head" }, h("div", { class: "pg-scale-title" }, h("span", {
+				class: "pg-scale-name",
+				text: t.name
+			}), h("span", {
+				class: "pg-scale-measures",
+				text: t.measures
+			})), tools), scaleTrack({
+				trait: t,
+				single: true,
+				dataKey: `scale:${t.id}`,
+				readonly: ro,
+				markers: [{
+					key: t.id,
+					label: ownName(),
+					value
+				}],
+				onCommit: (id, v) => commitScale(id, v, `scale:${id}`)
+			}));
+			if (open || ro && note) {
+				const noteField = field(`scale:${t.id}:note`, note, (d, v) => setScaleNote(d, t.id, v), {
+					multiline: true,
+					placeholder: "Onde o traço aparece, cenas de exemplo, conflitos…",
+					label: `Nota: ${t.name}`,
+					class: "pg-scale-note"
+				});
+				if (!editable) noteField.readOnly = true;
+				noteField.addEventListener("input", () => noteBtn.classList.toggle("has-note", noteField.value.trim() !== ""));
+				card.append(noteField);
+			}
+			grid.append(card);
+		}
+		const notice = editable ? null : h("p", {
+			class: "pg-banner-detail pg-scales-unknown",
+			text: SCALES_UNKNOWN
+		});
+		const quiz = ro || !questionnaireEditable(c) ? null : button("Questionário", "pg-btn pg-quiz-open", openQuestionnaire, "Questionário: responder afirmações sobre o personagem para calcular as posições");
+		if (quiz) quiz.dataset.key = "quiz:open";
+		const compare = typeof granite.views?.open === "function" ? button("Comparar com…", "pg-btn pg-compare-open", () => void openComparison(granite, { paths: [doc.path] }), "Comparar a personalidade com a de outros personagens") : null;
+		if (compare) compare.dataset.key = "compare:open";
+		return h("div", { class: "pg-field pg-scales-block" }, h("div", { class: "pg-scales-head" }, h("h3", {
+			class: "pg-label pg-subtitle",
+			text: "Escala de personalidade"
+		}), h("div", { class: "pg-scales-actions" }, compare, quiz)), notice, grid);
+	};
+	const openQuestionnaire = () => showQuestionnaire({
+		uid,
+		name: ownName,
+		data: () => data,
+		edit: (apply) => edit(apply),
+		overlay,
+		applied: () => renderScales(),
+		toast: (m) => granite.ui.toast(m)
+	});
+	const commitScale = (id, v, focus) => {
+		if (edit((d) => setScale(d, id, v))) renderScales(focus);
+	};
+	/** Redraws only the scales, focusing `focus` (else keeping the focus). */
+	const renderScales = (focus) => {
+		if (destroyed || !data) return;
+		const old = page.querySelector(".pg-scales-block");
+		if (!old) return;
+		const snap = focus ? {
+			key: focus,
+			start: null,
+			end: null
+		} : old.contains(document.activeElement) ? snapshot() : null;
+		old.replaceWith(scales(data));
+		restore(snap);
+	};
 	const personality = (c) => section("personality", "Personalidade", chips("traits", "Traços", (d) => d.personality.traits), labeled("Jeito de falar", field("speech", c.personality.speech, (d, v) => d.personality.speech = v, {
 		multiline: true,
 		placeholder: "Pronome que usa, bordões…"
@@ -1254,7 +2772,7 @@ function createSheet(granite, container, doc) {
 	})), labeled("Medos", field("fears", c.personality.fears, (d, v) => d.personality.fears = v, {
 		multiline: true,
 		placeholder: "Adicionar…"
-	})));
+	})), scales(c));
 	/** This character's name for the other sheets' messages. */
 	const ownName = () => data?.name.trim() || baseName(doc.path);
 	/** Whether `target` is a known character that does not point back here yet. */
@@ -1493,6 +3011,7 @@ function createSheet(granite, container, doc) {
 			return;
 		}
 		const c = data;
+		root.style.setProperty("--pg-char", characterColor(c, doc.path));
 		page.replaceChildren(header(c), appearance(c), personality(c), section("history", "História", field("history", c.history, (d, v) => d.history = v, {
 			multiline: true,
 			placeholder: "Adicionar história…",
@@ -1555,8 +3074,16 @@ function createSheet(granite, container, doc) {
 }
 //#endregion
 //#region src/main.ts
+var paths = (args) => Array.isArray(args[0]) ? args[0].filter((p) => typeof p === "string") : [];
 function activate(granite) {
 	granite.registerEditor("ficha", { create: (container, doc) => createSheet(granite, container, doc) });
+	if (typeof granite.registerView !== "function") return;
+	granite.registerView(VIEW_ID, { create: (container, ctx) => createComparison(granite, container, ctx) });
+	granite.commands.register("compare", (...args) => openComparison(granite, { paths: paths(args) }));
+	granite.commands.register("compareFolder", (...args) => {
+		const folder = paths(args)[0];
+		return folder === void 0 ? false : openComparison(granite, { folder });
+	});
 }
 //#endregion
 export { activate };
